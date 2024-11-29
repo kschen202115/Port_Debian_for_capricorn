@@ -9,7 +9,7 @@ sudo cp /etc/resolv.conf /mnt/chroot/etc/
 sudo cp /etc/hosts /mnt/chroot/etc/
 
 rm /mnt/chroot/tmp/linux-*.deb 
-cp linux-* /mnt/chroot/tmp
+cp linux/linux-* /mnt/chroot/tmp
 cp chroot_install_kernel* /mnt/chroot/tmp/install_kernel.sh
 
 sudo chroot /mnt/chroot

@@ -5,7 +5,7 @@ mkbootimg --base 0x80000000 \
         --kernel_offset 0x00008000 \
         --ramdisk_offset 0x01000000 \
         --tags_offset 0x00000100 \
-        --pagesize 2048 \
+        --pagesize 4096 \
         --second_offset 0x00f00000 \
         --ramdisk ./tmp_mkboot/initrd.img \
         --cmdline "earlycon console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash"\
