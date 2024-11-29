@@ -34,7 +34,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
         with: 
-          lfs: 'true'
+          lfs: true
       - name: Initialization environment
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -50,7 +50,9 @@ jobs:
       - name: Download source code
         id: down
         run: |
+        
           git clone --depth 1 https://gitlab.com/kschen202115/msm8996-6.9.git linux
+          ls
       - name: Patch kernel
         id: patch
         run: |
