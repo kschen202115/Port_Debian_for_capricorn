@@ -3,24 +3,6 @@ name: Build Linux_msm8996 with gcc
 on:
   repository_dispatch:
   workflow_dispatch:
-    inputs:
-      set_git_repo:
-        description: "repo"
-        required: true
-        default: "AK201314/linux"
-      set_git_branch:
-        description: "branch"
-        required: true
-        default: "msm8916/6.7-rc4"
-        #default: "old/msm8916/5.18"
-      set_kernel_patch_version:
-        description: "kernel_patch_version"
-        required: true
-        default: "msm8916-6.8"
-      set_kernel_localversion:
-        description: "kernel_localversion"
-        required: true
-        default: "-ak201314-compile"
 
 env:
   TZ: Asia/Shanghai
@@ -100,19 +82,61 @@ jobs:
           cd ..
           echo "::set-output name=status::success"
 
-      - name: Upload file
-        uses: actions/upload-artifact@v3
-        with:
-          name: debian-linux
-          path: /workdir/*
-
+      - name: Prepare Environment
+        run: |
+          cd /rootfs
+          wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_debian/root.zip
+          unzip root.zip
+          sudo rm -rf root.zip
+          simg2img ./rootfs.img ./root.img
+          sudo rm -rf rootfs.img
+          sudo mount root.img /mnt/chroot
+          sudo mount --bind /proc /mnt/chroot/proc
+          sudo mount --bind /dev /mnt/chroot/dev
+          sudo mount --bind /dev/pts /mnt/chroot/dev/pts
+          sudo mount --bind /sys /mnt/chroot/sys
+          # sudo mkdir -p /mnt/chroot/tmp
+          sudo rm -rf  /mnt/chroot/tmp/linux-*.deb 
+          cp linux-* /mnt/chroot/tmp
+      - name: Install Kernel in chroot
+        run: |
+          sudo chroot /mnt/chroot /bin/bash -c "
+            cd /tmp
+            dpkg --get-selections | grep linux
+            dpkg -l | grep -E 'linux-headers|linux-image' | awk '{print \$2}' | xargs dpkg -P
+            rm -rf /lib/modules/*
+            dpkg -i linux*.deb
+            dpkg --get-selections | grep linux
+            ls /lib/modules
+          "
+      - name: Build boot image
+        run: |
+          cd /rootfs/
+          ls
+          cp /mnt/chroot/boot/initrd* ./tmp_mkboot/
+          cp ./tmp_mkboot/initrd* ./tmp_mkboot/initrd.img
+          cp ./tmp_mkboot/*.dtb ./tmp_mkboot/dtb
+          cat ./tmp_mkboot/Image.gz ./tmp_mkboot/dtb > ./tmp_mkboot/kernel-dtb
+          mkbootimg --base 0x80000000 \
+                    --kernel_offset 0x00008000 \
+                    --ramdisk_offset 0x01000000 \
+                    --tags_offset 0x00000100 \
+                    --pagesize 4096 \
+                    --second_offset 0x00f00000 \
+                    --ramdisk ./tmp_mkboot/initrd.img \
+                    --cmdline "console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash" \
+                    --kernel ./tmp_mkboot/kernel-dtb -o ./tmp_mkboot/boot.img
+          img2simg ./root.img ./rootfs.img
+          zip root.zip rootfs.img
+          cp root.zip /workdir/
+          cp  ./tmp_mkboot/boot.img /workdir/
       - name: Upload image to Release
         uses: ncipollo/release-action@main
         if: steps.compile.outputs.status == 'success' && !cancelled()
         with:
-          tag: Linux_Kernel_gcc
+          tag: debian_for_capricorn_with_clang
           artifacts: /workdir/*
           allowUpdates: true
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
-            This is Linux Kernel ${{ env.LINUX_GITURL }}
+            This is Linux Kernel
