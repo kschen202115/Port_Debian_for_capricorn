@@ -49,6 +49,7 @@ jobs:
           chmod +x llvm.sh
           sudo ./llvm.sh 19
           which ld.lld
+          sudo apt install lld-19 -y
           clang --version
           ld.lld --version
           sudo mkdir -p /workdir
