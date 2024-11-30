@@ -48,8 +48,9 @@ jobs:
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 19
-          which ld.lld
+          #which ld.lld
           sudo apt install lld-19 -y
+          which ld.lld
           clang --version
           ld.lld --version
           sudo mkdir -p /workdir
