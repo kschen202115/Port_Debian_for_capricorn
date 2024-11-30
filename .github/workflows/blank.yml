@@ -59,6 +59,7 @@ jobs:
           #which ld.lld
           clang-19 --version
           ld.lld-19 --version
+          locate llvm
         
           git clone --depth 1 https://gitlab.com/kschen202115/msm8996-6.9.git linux
           ls
