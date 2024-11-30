@@ -109,7 +109,7 @@ jobs:
           ls
           #https://media.githubusercontent.com/media/kschen202115/Port_Debian_for_capricorn/refs/heads/main/root.zip
           unzip root.zip
-          bash mount_rootfs.sh
+          sudo bash mount_rootfs.sh
           cd tmp
           bash install_kernel.sh
           exit
