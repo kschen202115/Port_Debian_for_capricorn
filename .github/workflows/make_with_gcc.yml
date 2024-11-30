@@ -112,6 +112,8 @@ jobs:
           sudo mount --bind /dev/pts /mnt/chroot/dev/pts
           sudo mount --bind /sys /mnt/chroot/sys
           # sudo mkdir -p /mnt/chroot/tmp
+          
+          sudo rm -rf  /mnt/chroot/tmp/linux-*.deb 
           cp linux-* /mnt/chroot/tmp
   
       - name: Install Kernel in chroot
@@ -119,10 +121,12 @@ jobs:
           sudo chroot /mnt/chroot /bin/bash -c "
             cd /tmp
             dpkg --get-selections | grep linux
-            dpkg -l | grep -E 'linux-headers|linux-image' | awk '{print \$2}' | xargs dpkg -P
+            dpkg -l | grep -E "linux-headers|linux-image" |awk '{print $2}'|xargs dpkg -P
             rm -rf /lib/modules/*
+            
             dpkg -i linux*.deb
             dpkg --get-selections | grep linux
+            
             ls /lib/modules
           "
   
