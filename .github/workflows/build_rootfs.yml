@@ -67,9 +67,11 @@ jobs:
       - name: Prepare Environment
         run: |
           cd /rootfs
-          wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_rootfs/root.zip
+          wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_debian/root.zip
           unzip root.zip
           sudo rm -rf root.zip
+          simg2img ./rootfs.img ./root.img
+          sudo rm -rf rootfs.img
           sudo mount root.img /mnt/chroot
           sudo mount --bind /proc /mnt/chroot/proc
           sudo mount --bind /dev /mnt/chroot/dev
