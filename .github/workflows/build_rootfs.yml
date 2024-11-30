@@ -1,0 +1,136 @@
+name: Build Linux_msm8996 with gcc
+on:
+  repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      set_git_repo:
+        description: "repo"
+        required: true
+        default: "AK201314/linux"
+      set_git_branch:
+        description: "branch"
+        required: true
+        default: "msm8916/6.7-rc4"
+        #default: "old/msm8916/5.18"
+      set_kernel_patch_version:
+        description: "kernel_patch_version"
+        required: true
+        default: "msm8916-6.8"
+      set_kernel_localversion:
+        description: "kernel_localversion"
+        required: true
+        default: "-ak201314-compile"
+
+env:
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    if: github.event.repository.owner.id == github.event.sender.id
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with: 
+          lfs: true
+      - name: Initialization environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install -y binfmt-support qemu-user-static  kernel-package fakeroot simg2img img2simg mkbootimg bison libelf-dev flex gcc-aarch64-linux-gnu pkg-config libncurses-dev libssl-dev unzip git bc devscripts debhelper
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone "$TZ"
+          sudo mkdir -p /mnt/chroot
+          sudo mkdir -p /workdir
+          sudo chown $USER:$GROUPS /workdir
+          sudo mkdir -p /rootfs/
+          sudo mkdir -p /rootfs/tmp_mkboot
+          sudo chown $USER:$GROUPS /rootfs
+          sudo chown $USER:$GROUPS /rootfs/tmp_mkboot
+          sudo chown $USER:$GROUPS /mnt/chroot
+          cp *.sh /rootfs/
+          cp root.zip /rootfs/
+          cp *capricorn*.dtb /rootfs/tmp_mkboot/
+      - name: Download source code
+        id: down
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 19
+          git clone --depth 1 https://gitlab.com/kschen202115/msm8996-6.9.git linux
+          ls
+      - name: Compile
+        id: compile
+        run: |
+          wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_gcc/Image.gz
+          https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_gcc/linux-libc-dev_6.9.0-rc5-g15e6cff3a72c-1_arm64.deb
+          wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_gcc/linux-headers-6.9.0-rc5-kschen+_6.9.0-rc5-g15e6cff3a72c-1_arm64.deb
+          wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_gcc/linux-image-6.9.0-rc5-kschen+_6.9.0-rc5-g15e6cff3a72c-1_arm64.deb
+          cp *.deb /workdir
+          cp *.deb /rootfs
+          cp Image.gz /workdir
+          cp Image.gz /rootfs/tmp_mkboot/
+          echo "::set-output name=status::success"
+      - name: Prepare Environment
+        run: |
+          cd /rootfs
+          unzip root.zip
+          sudo mount root.img /mnt/chroot
+          sudo mount --bind /proc /mnt/chroot/proc
+          sudo mount --bind /dev /mnt/chroot/dev
+          sudo mount --bind /dev/pts /mnt/chroot/dev/pts
+          sudo mount --bind /sys /mnt/chroot/sys
+          # sudo mkdir -p /mnt/chroot/tmp
+          
+          sudo rm -rf  /mnt/chroot/tmp/linux-*.deb 
+          cp linux-* /mnt/chroot/tmp
+  
+      - name: Install Kernel in chroot
+        run: |
+          sudo chroot /mnt/chroot /bin/bash -c "
+            cd /tmp
+            dpkg --get-selections | grep linux
+            dpkg -l | grep -E 'linux-headers|linux-image' | awk '{print \$2}' | xargs dpkg -P
+            rm -rf /lib/modules/*
+            dpkg -i linux*.deb
+            dpkg --get-selections | grep linux
+            ls /lib/modules
+          "
+      - name: Build boot image
+        run: |
+          ls
+          cp /mnt/chroot/boot/initrd* ./tmp_mkboot/
+          cp ./tmp_mkboot/initrd* ./tmp_mkboot/initrd.img
+          cp ./tmp_mkboot/*.dtb ./tmp_mkboot/dtb
+          cat ./tmp_mkboot/Image.gz ./tmp_mkboot/dtb > ./tmp_mkboot/kernel-dtb
+          mkbootimg --base 0x80000000 \
+                    --kernel_offset 0x00008000 \
+                    --ramdisk_offset 0x01000000 \
+                    --tags_offset 0x00000100 \
+                    --pagesize 4096 \
+                    --second_offset 0x00f00000 \
+                    --ramdisk ./tmp_mkboot/initrd.img \
+                    --cmdline "console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash" \
+                    --kernel ./tmp_mkboot/kernel-dtb -o ./tmp_mkboot/boot.img
+          img2simg ./root.img ./tmp_mkboot/rootfs.img
+          cp  ./tmp_mkboot/* /workdir/
+      - name: Upload file
+        uses: actions/upload-artifact@v3
+        with:
+          name: debian-linux
+          path: /workdir/*
+
+      - name: Upload image to Release
+        uses: ncipollo/release-action@main
+        if: steps.compile.outputs.status == 'success' && !cancelled()
+        with:
+          tag: Linux_Kernel_gcc
+          artifacts: /workdir/*
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            This is Linux Kernel ${{ env.LINUX_GITURL }}
