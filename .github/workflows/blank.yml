@@ -84,6 +84,7 @@ jobs:
         id: compile
         run: |
           cd linux
+          export PATH=/usr/lib/llvm-19/bin:$PATH
 
           export CROSS_COMPILE=aarch64-linux-gnu-
           export ARCH=arm64
@@ -102,6 +103,7 @@ jobs:
       - name: rootfs
         id: rootfs
         run: |
+          ls
           #https://media.githubusercontent.com/media/kschen202115/Port_Debian_for_capricorn/refs/heads/main/root.zip
           unzip root.zip
           bash mount_rootfs.sh
