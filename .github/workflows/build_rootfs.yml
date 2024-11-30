@@ -1,8 +1,25 @@
-
-name: Build Linux_msm8996 with gcc
+name: Build rootfs
 on:
   repository_dispatch:
   workflow_dispatch:
+    inputs:
+      set_git_repo:
+        description: "repo"
+        required: true
+        default: "AK201314/linux"
+      set_git_branch:
+        description: "branch"
+        required: true
+        default: "msm8916/6.7-rc4"
+        #default: "old/msm8916/5.18"
+      set_kernel_patch_version:
+        description: "kernel_patch_version"
+        required: true
+        default: "msm8916-6.8"
+      set_kernel_localversion:
+        description: "kernel_localversion"
+        required: true
+        default: "-ak201314-compile"
 
 env:
   TZ: Asia/Shanghai
@@ -21,7 +38,7 @@ jobs:
         run: |
           sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo -E apt-get -qq update
-          sudo -E apt-get -qq install -y binfmt-support qemu-user-static  kernel-package fakeroot simg2img img2simg mkbootimg bison libelf-dev flex gcc-aarch64-linux-gnu pkg-config libncurses-dev libssl-dev unzip git bc devscripts debhelper
+          sudo -E apt-get -qq install -y binfmt-support qemu-user-static  kernel-package zip fakeroot simg2img img2simg mkbootimg bison libelf-dev flex gcc-aarch64-linux-gnu pkg-config libncurses-dev libssl-dev unzip git bc devscripts debhelper
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
           sudo timedatectl set-timezone "$TZ"
@@ -34,54 +51,19 @@ jobs:
           sudo chown $USER:$GROUPS /rootfs/tmp_mkboot
           sudo chown $USER:$GROUPS /mnt/chroot
           cp *.sh /rootfs/
-      - name: Download source code
-        id: down
-        run: |
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 19
-          git clone --depth 1 https://gitlab.com/kschen202115/msm8996-6.9.git linux
-          ls
-      - name: Patch kernel
-        id: patch
-        run: |
-          # cp  cjktty-6.9.patch linux/cjktty-6.9.patch
-          cp config linux/arch/arm64/configs/msm8996_defconfig
-          chmod +rw linux/arch/arm64/configs/msm8996_defconfig
-          cd linux
-          wget https://raw.githubusercontent.com/zhmars/cjktty-patches/refs/heads/master/cjktty-add-cjk32x32-font-data.patch
-          wget https://raw.githubusercontent.com/kschen202115/Armbian-build/refs/heads/main/cjktty-6.9.patch
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export ARCH=arm64
-          make clean
-          make mrproper
-          git apply cjktty-6.9.patch
-          git apply cjktty-add-cjk32x32-font-data.patch
-          git add .
-          cd ..
+          cp *capricorn*.dtb /rootfs/tmp_mkboot/
       - name: Compile
         id: compile
         run: |
-          cd linux
-          export PATH=/usr/lib/llvm-19/bin:$PATH
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export ARCH=arm64
-          make msm8996_defconfig 
-          #make deb-pkg ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 LLVM=1 LTO=1 -j$(nproc)
-          make deb-pkg -j$(nproc)
-          cd ..
+          wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_gcc/Image.gz
+          wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_gcc/linux-libc-dev_6.9.0-rc5-g15e6cff3a72c-1_arm64.deb
+          wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_gcc/linux-headers-6.9.0-rc5-kschen+_6.9.0-rc5-g15e6cff3a72c-1_arm64.deb
+          wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_gcc/linux-image-6.9.0-rc5-kschen+_6.9.0-rc5-g15e6cff3a72c-1_arm64.deb
           cp *.deb /workdir
           cp *.deb /rootfs
-          cp linux/arch/arm64/boot/Image.gz /workdir
-          cp linux/arch/arm64/boot/Image.gz /rootfs/tmp_mkboot/
-          cp linux/arch/arm64/boot/dts/qcom/*capricorn*.dtb /rootfs/tmp_mkboot/
-          tar -czf /workdir/msm8996_dtb.tar.gz linux/arch/arm64/boot/dts/qcom/*capricorn*.dtb
-          find ./ -type f \( ! -name "*.ko" -a ! -name "modules.*" \) -exec rm -f {} \;
-          cd linux/
-          tar -czf /workdir/modules.tar.gz ./*
-          cd ..
+          cp Image.gz /workdir
+          cp Image.gz /rootfs/tmp_mkboot/
           echo "::set-output name=status::success"
-
       - name: Prepare Environment
         run: |
           cd /rootfs
@@ -134,9 +116,9 @@ jobs:
         uses: ncipollo/release-action@main
         if: steps.compile.outputs.status == 'success' && !cancelled()
         with:
-          tag: debian_for_capricorn_with_gcc
+          tag: Linux_Kernel_debian
           artifacts: /workdir/*
           allowUpdates: true
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
-            This is Linux Kernel
+            This is Linux Kernel ${{ env.LINUX_GITURL }}
