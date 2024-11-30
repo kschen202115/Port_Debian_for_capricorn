@@ -13,5 +13,4 @@ mkbootimg --base 0x80000000 \
 rm ./tmp_mkboot/dtb
 rm ./tmp_mkboot/kernel-dtb
 rm ./tmp_mkboot/initrd.img
-rm ./tmp_mkboot/rootfs.img
 img2simg ./root.img ./tmp_mkboot/rootfs.img
