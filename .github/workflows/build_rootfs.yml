@@ -107,8 +107,10 @@ jobs:
                     --ramdisk ./tmp_mkboot/initrd.img \
                     --cmdline "console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash" \
                     --kernel ./tmp_mkboot/kernel-dtb -o ./tmp_mkboot/boot.img
-          img2simg ./root.img ./tmp_mkboot/rootfs.img
-          cp  ./tmp_mkboot/* /workdir/
+          img2simg ./root.img ./rootfs.img
+          zip root.zip rootfs.img
+          cp root.zip /workdir/
+          cp  ./tmp_mkboot/boot.img /workdir/
       - name: Upload file
         uses: actions/upload-artifact@v3
         with:
