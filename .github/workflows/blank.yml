@@ -58,7 +58,7 @@ jobs:
           sudo apt install lld-19 -y
           #which ld.lld
           clang-19 --version
-          ld.lld-19 --versiony
+          ld.lld-19 --version
         
           git clone --depth 1 https://gitlab.com/kschen202115/msm8996-6.9.git linux
           ls
