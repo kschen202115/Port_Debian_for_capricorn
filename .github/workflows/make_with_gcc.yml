@@ -33,8 +33,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-        with: 
-          lfs: true
       - name: Initialization environment
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -54,7 +52,6 @@ jobs:
           sudo chown $USER:$GROUPS /rootfs/tmp_mkboot
           sudo chown $USER:$GROUPS /mnt/chroot
           cp *.sh /rootfs/
-          cp root.zip /rootfs/
       - name: Download source code
         id: down
         run: |
@@ -102,49 +99,6 @@ jobs:
           tar -czf /workdir/modules.tar.gz ./*
           cd ..
           echo "::set-output name=status::success"
-      - name: Prepare Environment
-        run: |
-          cd /rootfs
-          unzip root.zip
-          sudo mount root.img /mnt/chroot
-          sudo mount --bind /proc /mnt/chroot/proc
-          sudo mount --bind /dev /mnt/chroot/dev
-          sudo mount --bind /dev/pts /mnt/chroot/dev/pts
-          sudo mount --bind /sys /mnt/chroot/sys
-          # sudo mkdir -p /mnt/chroot/tmp
-          
-          sudo rm -rf  /mnt/chroot/tmp/linux-*.deb 
-          cp linux-* /mnt/chroot/tmp
-  
-      - name: Install Kernel in chroot
-        run: |
-          sudo chroot /mnt/chroot /bin/bash -c "
-            cd /tmp
-            dpkg --get-selections | grep linux
-            dpkg -l | grep -E 'linux-headers|linux-image' | awk '{print \$2}' | xargs dpkg -P
-            rm -rf /lib/modules/*
-            dpkg -i linux*.deb
-            dpkg --get-selections | grep linux
-            ls /lib/modules
-          "
-
-      - name: Build boot image
-        run: |
-          cp /mnt/chroot/boot/initrd* ./tmp_mkboot/
-          cp ./tmp_mkboot/initrd* ./tmp_mkboot/initrd.img
-          cp ./tmp_mkboot/*.dtb ./tmp_mkboot/dtb
-          cat ./tmp_mkboot/Image.gz ./tmp_mkboot/dtb > ./tmp_mkboot/kernel-dtb
-          mkbootimg --base 0x80000000 \
-                    --kernel_offset 0x00008000 \
-                    --ramdisk_offset 0x01000000 \
-                    --tags_offset 0x00000100 \
-                    --pagesize 4096 \
-                    --second_offset 0x00f00000 \
-                    --ramdisk ./tmp_mkboot/initrd.img \
-                    --cmdline "console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash" \
-                    --kernel ./tmp_mkboot/kernel-dtb -o ./tmp_mkboot/boot.img
-          img2simg ./root.img ./tmp_mkboot/rootfs.img
-          cp  ./tmp_mkboot/* /workdir/
 
       - name: Upload file
         uses: actions/upload-artifact@v3
