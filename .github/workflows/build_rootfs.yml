@@ -32,8 +32,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-        with: 
-          lfs: true
       - name: Initialization environment
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -53,7 +51,6 @@ jobs:
           sudo chown $USER:$GROUPS /rootfs/tmp_mkboot
           sudo chown $USER:$GROUPS /mnt/chroot
           cp *.sh /rootfs/
-          cp root.zip /rootfs/
           cp *capricorn*.dtb /rootfs/tmp_mkboot/
       - name: Compile
         id: compile
@@ -70,6 +67,7 @@ jobs:
       - name: Prepare Environment
         run: |
           cd /rootfs
+          wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_rootfs/root.zip
           unzip root.zip
           sudo mount root.img /mnt/chroot
           sudo mount --bind /proc /mnt/chroot/proc
@@ -111,17 +109,11 @@ jobs:
           zip root.zip rootfs.img
           cp root.zip /workdir/
           cp  ./tmp_mkboot/boot.img /workdir/
-      - name: Upload file
-        uses: actions/upload-artifact@v3
-        with:
-          name: debian-linux
-          path: /workdir/*
-
       - name: Upload image to Release
         uses: ncipollo/release-action@main
         if: steps.compile.outputs.status == 'success' && !cancelled()
         with:
-          tag: Linux_Kernel_rootfs
+          tag: Linux_Kernel_debian
           artifacts: /workdir/*
           allowUpdates: true
           token: ${{ secrets.GITHUB_TOKEN }}
