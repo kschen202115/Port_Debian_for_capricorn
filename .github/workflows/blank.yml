@@ -139,4 +139,4 @@ jobs:
           allowUpdates: true
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
-            This is Linux Kernel ${{ env.LINUX_
+            This is Linux Kernel
