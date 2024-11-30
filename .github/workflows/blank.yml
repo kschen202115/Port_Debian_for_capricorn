@@ -89,7 +89,7 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           export ARCH=arm64
           make msm8996_defconfig
-          make deb-pkg ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 LLVM=1 THINLTO=1 -j$(nproc)
+          make deb-pkg ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 LLVM=1 LTO=1 -j$(nproc)
           #make deb-pkg -j$(nproc)
           cd ..
           cp *.deb /workdir
