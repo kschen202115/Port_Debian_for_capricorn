@@ -121,15 +121,13 @@ jobs:
           sudo chroot /mnt/chroot /bin/bash -c "
             cd /tmp
             dpkg --get-selections | grep linux
-            dpkg -l | grep -E "linux-headers|linux-image" |awk '{print $2}'|xargs dpkg -P
+            dpkg -l | grep -E 'linux-headers|linux-image' | awk '{print \$2}' | xargs dpkg -P
             rm -rf /lib/modules/*
-            
             dpkg -i linux*.deb
             dpkg --get-selections | grep linux
-            
             ls /lib/modules
           "
-  
+
       - name: Build boot image
         run: |
           cp /mnt/chroot/boot/initrd* ./tmp_mkboot/
