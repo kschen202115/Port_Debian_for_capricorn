@@ -146,7 +146,7 @@ jobs:
                     --cmdline "console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash" \
                     --kernel ./tmp_mkboot/kernel-dtb -o ./tmp_mkboot/boot.img
           img2simg ./root.img ./tmp_mkboot/rootfs.img
-          cp -r ./tmp_mkboot/* /workdir/
+          cp  ./tmp_mkboot/* /workdir/
 
       - name: Upload file
         uses: actions/upload-artifact@v3
