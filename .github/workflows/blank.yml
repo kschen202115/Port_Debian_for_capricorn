@@ -103,6 +103,7 @@ jobs:
       - name: rootfs
         id: rootfs
         run: |
+          cd $GITHUB_WORKSPACE
           ls
           #https://media.githubusercontent.com/media/kschen202115/Port_Debian_for_capricorn/refs/heads/main/root.zip
           unzip root.zip
