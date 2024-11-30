@@ -100,20 +100,20 @@ jobs:
           tar -czf /workdir/modules.tar.gz ./*
           cd ..
           echo "::set-output name=status::success"
-      - name: rootfs
-        id: rootfs
-        run: |
-          cd $GITHUB_WORKSPACE
-          ls
-          #https://media.githubusercontent.com/media/kschen202115/Port_Debian_for_capricorn/refs/heads/main/root.zip
-          unzip root.zip
-          bash mount_rootfs.sh
-          cd tmp
-          bash install_kernel.sh
-          exit
-          bash get_kernel_files.sh
-          bash mkboot.sh
-          cp -r ./tmp_mkboot/* /workdir/
+      # - name: rootfs
+      #   id: rootfs
+      #   run: |
+      #     cd $GITHUB_WORKSPACE
+      #     ls
+      #     #https://media.githubusercontent.com/media/kschen202115/Port_Debian_for_capricorn/refs/heads/main/root.zip
+      #     unzip root.zip
+      #     bash mount_rootfs.sh
+      #     cd tmp
+      #     bash install_kernel.sh
+      #     exit
+      #     bash get_kernel_files.sh
+      #     bash mkboot.sh
+      #     cp -r ./tmp_mkboot/* /workdir/
 
       - name: Upload file
         uses: actions/upload-artifact@v3
