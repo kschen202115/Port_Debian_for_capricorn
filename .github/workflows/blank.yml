@@ -56,9 +56,9 @@ jobs:
           sudo ./llvm.sh 19
           #which ld.lld
           sudo apt install lld-19 -y
-          which ld.lld
-          clang --version
-          ld.lld --versiony
+          #which ld.lld
+          clang-19 --version
+          ld.lld-19 --versiony
         
           git clone --depth 1 https://gitlab.com/kschen202115/msm8996-6.9.git linux
           ls
@@ -86,7 +86,7 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           export ARCH=arm64
           make msm8996_defconfig
-          make deb-pkg ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang LD=ld.lld LLVM=1 THINLTO=1 -j$(nproc)
+          make deb-pkg ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 LLVM=1 THINLTO=1 -j$(nproc)
           #make deb-pkg -j$(nproc)
           cd ..
           cp *.deb /workdir
