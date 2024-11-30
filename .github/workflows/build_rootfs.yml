@@ -1,4 +1,4 @@
-name: Build Linux_msm8996 with gcc
+name: Build rootfs
 on:
   repository_dispatch:
   workflow_dispatch:
