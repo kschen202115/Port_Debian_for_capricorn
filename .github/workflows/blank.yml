@@ -33,8 +33,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-        #with: 
-          #lfs: true
+        with: 
+          lfs: true
       - name: Initialization environment
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -48,6 +48,12 @@ jobs:
           
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
+          sudo mkdir -p /rootfs/
+          sudo mkdir -p /rootfs/tmp_mkboot
+          sudo chown $USER:$GROUPS /rootfs
+          sudo chown $USER:$GROUPS /rootfs/tmp_mkboot
+          cp *.sh /rootfs/
+          cp root.zip /rootfs/
       - name: Download source code
         id: down
         run: |
@@ -78,7 +84,6 @@ jobs:
         run: |
           cd linux
           export PATH=/usr/lib/llvm-19/bin:$PATH
-
           export CROSS_COMPILE=aarch64-linux-gnu-
           export ARCH=arm64
           make msm8996_defconfig ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 LLVM=1 LTO=1
@@ -86,27 +91,30 @@ jobs:
           #make deb-pkg -j$(nproc)
           cd ..
           cp *.deb /workdir
+          cp *.deb /rootfs
           cp linux/arch/arm64/boot/Image.gz /workdir
+          cp linux/arch/arm64/boot/Image.gz /rootfs/tmp_mkboot/
+          cp linux/arch/arm64/boot/dts/qcom/*capricorn*.dtb /rootfs/tmp_mkboot/
           tar -czf /workdir/msm8996_dtb.tar.gz linux/arch/arm64/boot/dts/qcom/*capricorn*.dtb
           find ./ -type f \( ! -name "*.ko" -a ! -name "modules.*" \) -exec rm -f {} \;
           cd linux/
           tar -czf /workdir/modules.tar.gz ./*
           cd ..
           echo "::set-output name=status::success"
-      # - name: rootfs
-      #   id: rootfs
-      #   run: |
-      #     cd $GITHUB_WORKSPACE
-      #     ls
-      #     #https://media.githubusercontent.com/media/kschen202115/Port_Debian_for_capricorn/refs/heads/main/root.zip
-      #     unzip root.zip
-      #     bash mount_rootfs.sh
-      #     cd tmp
-      #     bash install_kernel.sh
-      #     exit
-      #     bash get_kernel_files.sh
-      #     bash mkboot.sh
-      #     cp -r ./tmp_mkboot/* /workdir/
+      - name: rootfs
+        id: rootfs
+        run: |
+          cd /rootfs/
+          ls
+          #https://media.githubusercontent.com/media/kschen202115/Port_Debian_for_capricorn/refs/heads/main/root.zip
+          unzip root.zip
+          bash mount_rootfs.sh
+          cd tmp
+          bash install_kernel.sh
+          exit
+          bash get_kernel_files.sh
+          bash mkboot.sh
+          cp -r ./tmp_mkboot/* /workdir/
 
       - name: Upload file
         uses: actions/upload-artifact@v3
