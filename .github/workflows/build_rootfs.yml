@@ -92,6 +92,7 @@ jobs:
           "
       - name: Build boot image
         run: |
+          cd /rootfs/
           ls
           cp /mnt/chroot/boot/initrd* ./tmp_mkboot/
           cp ./tmp_mkboot/initrd* ./tmp_mkboot/initrd.img
