@@ -126,7 +126,7 @@ jobs:
         uses: ncipollo/release-action@main
         if: steps.compile.outputs.status == 'success' && !cancelled()
         with:
-          tag: Linux_Kernel_${{ env.COMPILE_STARTINGTIME }}
+          tag: Linux_Kernel_gcc
           artifacts: /workdir/*
           allowUpdates: true
           token: ${{ secrets.GITHUB_TOKEN }}
