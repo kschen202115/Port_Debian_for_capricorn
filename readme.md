@@ -19,4 +19,13 @@ Port_Debian_for_capricorn
 
 默认中文环境，如果不打中文补丁，在tty下显示中文会乱码
 
+apt updata 或安装过软件失败请执行
+
+sudo apt install ntpdate
+
+sudo ntpdate cn.pool.ntp.org
+
+对时间进行矫正
+
+
 
