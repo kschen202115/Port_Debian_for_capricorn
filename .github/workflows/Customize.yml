@@ -19,11 +19,26 @@ on:
         description: "Apply CJKTTY patch"
         required: true
         default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
       add_firmware:
-          description: "add_firmware"
-          required: true
-          default: "false"
-
+        description: "Add firmware to the build"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      use_clang:
+        description: "Use Clang as the compiler"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
 env:
   TZ: Asia/Shanghai
 
@@ -90,8 +105,15 @@ jobs:
           export PATH=/usr/lib/llvm-19/bin:$PATH
           export CROSS_COMPILE=aarch64-linux-gnu-
           export ARCH=arm64
-          make ${{ inputs.device_code }}_defconfig 
-          make deb-pkg -j$(nproc)
+
+          if [ "${{ inputs.use_clang }}" == "true" ]; then
+            make ${{ inputs.device_code }}_defconfig ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1
+            make deb-pkg ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1 -j$(nproc)
+          fi
+          if [ "${{ inputs.use_clang }}" == "false" ]; then
+            make ${{ inputs.device_code }}_defconfig 
+            make deb-pkg -j$(nproc)
+          fi
           cd ..
           cp *.deb /workdir
           cp *.deb /rootfs
