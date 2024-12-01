@@ -89,7 +89,9 @@ jobs:
           export ARCH=arm64
           make clean
           make mrproper
-          #cjk补丁可以去https://github.com/zhmars/cjktty-patches找支持到6.9，6.9，6.8的补丁在pull里
+          ######################################################################
+          #cjk补丁可以去https://github.com/zhmars/cjktty-patches找支持到6.9，6.9，6.8的补丁在pull里#
+          ######################################################################
           if [ "${{ inputs.apply_cjktty_patch }}" == "true" ]; then
             wget https://raw.githubusercontent.com/zhmars/cjktty-patches/refs/heads/master/cjktty-add-cjk32x32-font-data.patch
             wget https://raw.githubusercontent.com/kschen202115/Armbian-build/refs/heads/main/cjktty-6.9.patch
@@ -130,11 +132,17 @@ jobs:
       - name: Prepare Environment
         run: |
           cd /rootfs
+          ###########################################################
+          #如果需要使用自定义rootfs，请替换下面链接，并修改对应代码
+          #rootfs链接
           wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_debian/root.zip
+          #解压并清除
           unzip root.zip
           sudo rm -rf root.zip
+          #转化格式并清除
           simg2img ./rootfs.img ./root.img
           sudo rm -rf rootfs.img
+          
           sudo mount root.img /mnt/chroot
           sudo mount --bind /proc /mnt/chroot/proc
           sudo mount --bind /dev /mnt/chroot/dev
