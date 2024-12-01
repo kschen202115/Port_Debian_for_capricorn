@@ -93,7 +93,7 @@ jobs:
         # sudo umount rootfs/dev/pts
         # sudo umount rootfs/dev
         df -h
-        du -sh ./rootfs
+        sudo du -sh ./rootfs
 
     - name: Create Disk Image
       run: |
