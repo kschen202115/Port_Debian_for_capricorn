@@ -178,29 +178,28 @@ jobs:
           OUTPUT_PATH="/workdir/boot.img"
           cp ./tmp_mkboot/initrd.img initrd.img
           cp ./tmp_mkboot/kernel-dtb zImage
+          
+          # 自动计算新的 bootsize
+          KERNEL_SIZE=$(stat -c %s zImage)        # 获取内核大小
+          RAMDISK_SIZE=$(stat -c %s initrd.img)  # 获取 ramdisk 大小
+          PAGESIZE=4096                          # 页大小（默认）
+          ALIGN=$((PAGESIZE - 1))                # 对齐值
+          
+          # 计算实际大小（对齐页边界）
+          CALC_SIZE=$((KERNEL_SIZE + RAMDISK_SIZE + 2 * PAGESIZE))
+          BOOTSIZE=$(((CALC_SIZE + ALIGN) & ~ALIGN)) # 对齐到页边界
+          
+          # 给 Boot Image 加 1MB 额外空间（1048576 字节）
+          BOOTSIZE_WITH_EXTRA=$((BOOTSIZE + 1048576))
+          
+          # 更新 bootsize 参数
+          sed -i "s|^bootsize = .*|bootsize = 0x$(printf '%x' $BOOTSIZE_WITH_EXTRA)|" bootimg.cfg
+
+          # 显示修改后的 bootimg.cfg
+          echo "Updated bootimg.cfg:"
+          cat bootimg.cfg
+
           abootimg --create "$OUTPUT_PATH" -f bootimg.cfg -k zImage -r initrd.img
-          ########################################################
-          # 根据自己的机型修改，
-          ########################################################
-          # mkbootimg --base 0x80000000 \
-          #           --kernel_offset 0x00008000 \
-          #           --ramdisk_offset 0x01000000 \
-          #           --tags_offset 0x00000100 \
-          #           --pagesize 4096 \
-          #           --second_offset 0x00f00000 \
-          #           --ramdisk ./tmp_mkboot/initrd.img \
-          #           --cmdline "console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash" \
-          #           --kernel ./tmp_mkboot/kernel-dtb -o ./tmp_mkboot/boot.img
-          # 使用提取的参数重建 boot.img
-          # mkbootimg --base "$BASE" \
-          #           --kernel_offset "$KERNEL_OFFSET" \
-          #           --ramdisk_offset "$RAMDISK_OFFSET" \
-          #           --tags_offset "$TAGS_OFFSET" \
-          #           --pagesize "$PAGESIZE" \
-          #           --second_offset "$SECOND_OFFSET" \
-          #           --ramdisk ./tmp_mkboot/initrd.img \
-          #           --cmdline "console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash" \
-          #           --kernel ./tmp_mkboot/kernel-dtb -o ./tmp_mkboot/boot.img
           img2simg ./root.img ./rootfs.img
           zip root.zip rootfs.img
           cp root.zip /workdir/
