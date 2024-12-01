@@ -56,7 +56,7 @@ jobs:
         sudo mount --bind /dev /mnt/rootfs/dev
         sudo mount --bind /sys /mnt/rootfs/sys
         echo "##############"
-        sudo chroot rootfs /debootstrap/debootstrap --second-stage --verbose
+        sudo chroot /mnt/rootfs /debootstrap/debootstrap --second-stage --verbose
 
     - name: Customize ARM64 RootFS
       run: |
