@@ -9,6 +9,8 @@ Port_Debian_for_capricorn
 
 内核配置为config文件，请自行修改
 
+还有请上传一个可用boot.img可以是其他系统移植的（pmos除外）或者从安卓卡刷包里提取
+
 如果要自定义其他包，例如mobian，kail，ubuntu，可以自己替换rootfs文件的
 
 这个包是基于Debian12，自带串口登录（内核支持），tty键盘（音量键开关），电源键开关屏幕长按关机
