@@ -26,10 +26,10 @@ jobs:
         sudo debootstrap --arch=arm64 --foreign --verbose $CODENAME rootfs http://ftp.us.debian.org/debian/
         sudo cp /usr/bin/qemu-aarch64-static rootfs/usr/bin/
         # 配置 chroot 环境
-        sudo mount -t proc /proc rootfs/proc
-        sudo mount -t sysfs /sys rootfs/sys
+        sudo mount --bind /proc rootfs/proc
         sudo mount --bind /dev rootfs/dev
         sudo mount --bind /dev/pts rootfs/dev/pts
+        sudo mount --bind /sys rootfs/sys
         echo "##############"
         sudo chroot rootfs /debootstrap/debootstrap --second-stage --verbose
 
