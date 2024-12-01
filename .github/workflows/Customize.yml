@@ -19,6 +19,10 @@ on:
         description: "Apply CJKTTY patch"
         required: true
         default: "true"
+      add_firmware:
+          description: "add_firmware"
+          required: true
+          default: "false"
 
 env:
   TZ: Asia/Shanghai
@@ -51,6 +55,7 @@ jobs:
           sudo chown $USER:$GROUPS /mnt/chroot
           cp *.sh /rootfs/
           cp boot.img /rootfs/
+          cp -rf ./firmware /rootfs/
       - name: Download source code
         id: down
         run: |
@@ -115,10 +120,12 @@ jobs:
           sudo mount --bind /sys /mnt/chroot/sys
           sudo rm -rf  /mnt/chroot/tmp/linux-*.deb 
           cp linux-* /mnt/chroot/tmp
-          #######################################
-          #请自己添加firmware到仓库里，并取消注释
-          #sudo cp -r ./firmware/* /mnt/chroot/lib/firmware/
-          #######################################
+          if [ "${{ inputs.add_firmware }}" == "true" ]; then
+            #######################################
+            #请自己添加firmware到仓库里，并取消注释
+            sudo cp -rf ./firmware/* /mnt/chroot/lib/firmware/
+            #######################################
+          fi
       - name: Install Kernel in chroot
         run: |
           sudo chroot /mnt/chroot /bin/bash -c "
@@ -185,4 +192,4 @@ jobs:
           allowUpdates: true
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
-            This is Linux Kernel for ${{ inputs.device_code }}
+            This is boot.img and rootfs.img(in the root.zip) for ${{ inputs.device_code }}
