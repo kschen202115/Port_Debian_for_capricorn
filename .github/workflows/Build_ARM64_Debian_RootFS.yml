@@ -34,13 +34,13 @@ jobs:
     - name: Create Disk Image
       run: |
         # 创建空白磁盘镜像
-        sudo qemu-img create -f raw rootfs.img 2G
-        sudo mkfs.ext4 -F rootfs.img
+        sudo qemu-img create -f raw root.img 2G
+        sudo mkfs.ext4 -F root.img
 
         # 将定制的 rootfs 写入镜像
         sudo mkdir -p /mnt/rootfs
-        sudo mount -o loop rootfs.img /mnt/rootfs
-        sudo umount /mnt/rootfs
+        sudo mount -o loop root.img /mnt/rootfs
+        #sudo umount /mnt/rootfs
     - name: Create ARM64 Debian RootFS
       run: |
         CODENAME=$(curl -s https://deb.debian.org/debian/dists/stable/Release | grep -oP 'Codename:\s+\K\w+')
@@ -101,7 +101,7 @@ jobs:
         # sudo umount /mnt/rootfs/sys
         # sudo umount /mnt/rootfs/dev/pts
         # sudo umount /mnt/rootfs/dev
-        df -h
+        sudo df -h
         #sudo du -sh ./rootfs
 
 
