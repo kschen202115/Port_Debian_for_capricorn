@@ -1,4 +1,4 @@
-name: Build Linux_msm8996 with gcc
+name: 自定义
 on:
   repository_dispatch:
   workflow_dispatch:
