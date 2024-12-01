@@ -1,0 +1,188 @@
+name: Build Linux_msm8996 with gcc
+on:
+  repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      kernel_repo:
+        description: "Kernel repository URL"
+        required: true
+        default: "https://gitlab.com/kschen202115/msm8996-6.9.git"
+      kernel_branch:
+        description: "Kernel branch"
+        required: true
+        default: "main"
+      device_code:
+        description: "Device codename"
+        required: true
+        default: "capricorn"
+      apply_cjktty_patch:
+        description: "Apply CJKTTY patch"
+        required: true
+        default: "true"
+
+env:
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    if: github.event.repository.owner.id == github.event.sender.id
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Initialization environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install -y binfmt-support qemu-user-static  kernel-package fakeroot simg2img img2simg mkbootimg bison libelf-dev flex gcc-aarch64-linux-gnu pkg-config libncurses-dev libssl-dev unzip git bc devscripts debhelper
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone "$TZ"
+          sudo mkdir -p /mnt/chroot
+          sudo mkdir -p /workdir
+          sudo chown $USER:$GROUPS /workdir
+          sudo mkdir -p /rootfs/
+          sudo mkdir -p /rootfs/tmp_mkboot
+          sudo chown $USER:$GROUPS /rootfs
+          sudo chown $USER:$GROUPS /rootfs/tmp_mkboot
+          sudo chown $USER:$GROUPS /mnt/chroot
+          cp *.sh /rootfs/
+          cp boot.img /rootfs/
+      - name: Download source code
+        id: down
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 19
+          git clone --depth 1 --branch "${{ inputs.kernel_branch }}" ${{ inputs.kernel_repo }} linux
+          ls
+      - name: Patch kernel
+        id: patch
+        run: |
+          cp config linux/arch/arm64/configs/${{ inputs.device_code }}_defconfig
+          chmod +rw linux/arch/arm64/configs/${{ inputs.device_code }}_defconfig
+          cd linux
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export ARCH=arm64
+          make clean
+          make mrproper
+          #cjk补丁可以去https://github.com/zhmars/cjktty-patches找支持到6.9，6.9，6.8的补丁在pull里
+          if [ "${{ inputs.apply_cjktty_patch }}" == "true" ]; then
+            wget https://raw.githubusercontent.com/zhmars/cjktty-patches/refs/heads/master/cjktty-add-cjk32x32-font-data.patch
+            wget https://raw.githubusercontent.com/kschen202115/Armbian-build/refs/heads/main/cjktty-6.9.patch
+            git apply cjktty-6.9.patch
+            git apply cjktty-add-cjk32x32-font-data.patch
+          fi
+          git add .
+          cd ..
+      - name: Compile
+        id: compile
+        run: |
+          cd linux
+          export PATH=/usr/lib/llvm-19/bin:$PATH
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export ARCH=arm64
+          make ${{ inputs.device_code }}_defconfig 
+          make deb-pkg -j$(nproc)
+          cd ..
+          cp *.deb /workdir
+          cp *.deb /rootfs
+          cp linux/arch/arm64/boot/Image.gz /workdir
+          cp linux/arch/arm64/boot/Image.gz /rootfs/tmp_mkboot/
+          cp linux/arch/arm64/boot/dts/qcom/*${{ inputs.device_code }}*.dtb /rootfs/tmp_mkboot/
+          tar -czf /workdir/dtb.tar.gz linux/arch/arm64/boot/dts/qcom/*${{ inputs.device_code }}*.dtb
+          find ./ -type f \( ! -name "*.ko" -a ! -name "modules.*" \) -exec rm -f {} \;
+          cd linux/
+          tar -czf /workdir/modules.tar.gz ./*
+          cd ..
+          echo "::set-output name=status::success"
+
+      - name: Prepare Environment
+        run: |
+          cd /rootfs
+          wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_debian/root.zip
+          unzip root.zip
+          sudo rm -rf root.zip
+          simg2img ./rootfs.img ./root.img
+          sudo rm -rf rootfs.img
+          sudo mount root.img /mnt/chroot
+          sudo mount --bind /proc /mnt/chroot/proc
+          sudo mount --bind /dev /mnt/chroot/dev
+          sudo mount --bind /dev/pts /mnt/chroot/dev/pts
+          sudo mount --bind /sys /mnt/chroot/sys
+          sudo rm -rf  /mnt/chroot/tmp/linux-*.deb 
+          cp linux-* /mnt/chroot/tmp
+          #######################################
+          #请自己添加firmware到仓库里，并取消注释
+          #sudo cp -r ./firmware/* /mnt/chroot/lib/firmware/
+          #######################################
+      - name: Install Kernel in chroot
+        run: |
+          sudo chroot /mnt/chroot /bin/bash -c "
+            cd /tmp
+            dpkg --get-selections | grep linux
+            dpkg -l | grep -E 'linux-headers|linux-image' | awk '{print \$2}' | xargs dpkg -P
+            rm -rf /lib/modules/*
+            dpkg -i linux*.deb
+            dpkg --get-selections | grep linux
+            ls /lib/modules
+          "
+      - name: Build boot image
+        run: |
+          cd /rootfs/
+          ls
+          cp /mnt/chroot/boot/initrd* ./tmp_mkboot/
+          cp ./tmp_mkboot/initrd* ./tmp_mkboot/initrd.img
+          cp ./tmp_mkboot/*.dtb ./tmp_mkboot/dtb
+          cat ./tmp_mkboot/Image.gz ./tmp_mkboot/dtb > ./tmp_mkboot/kernel-dtb
+          abootimg -x boot.img
+          # 显示提取的 boot.img 信息
+          echo "Extracted boot.img information:"
+          cat bootimg.cfg
+          # 从 bootimg.cfg 提取参数
+          #CMDLINE=$(grep "cmdline" bootimg.cfg | cut -d '=' -f 2-)
+          BASE=$(grep "base" bootimg.cfg | cut -d '=' -f 2-)
+          PAGESIZE=$(grep "pagesize" bootimg.cfg | cut -d '=' -f 2-)
+          RAMDISK_OFFSET=$(grep "ramdisk_offset" bootimg.cfg | cut -d '=' -f 2-)
+          SECOND_OFFSET=$(grep "second_offset" bootimg.cfg | cut -d '=' -f 2-)
+          TAGS_OFFSET=$(grep "tags_offset" bootimg.cfg | cut -d '=' -f 2-)
+          KERNEL_OFFSET=$(grep "kernel_offset" bootimg.cfg | cut -d '=' -f 2-)
+          ########################################################
+          # 根据自己的机型修改，
+          ########################################################
+          # mkbootimg --base 0x80000000 \
+          #           --kernel_offset 0x00008000 \
+          #           --ramdisk_offset 0x01000000 \
+          #           --tags_offset 0x00000100 \
+          #           --pagesize 4096 \
+          #           --second_offset 0x00f00000 \
+          #           --ramdisk ./tmp_mkboot/initrd.img \
+          #           --cmdline "console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash" \
+          #           --kernel ./tmp_mkboot/kernel-dtb -o ./tmp_mkboot/boot.img
+          # 使用提取的参数重建 boot.img
+          mkbootimg --base ${{ env.BASE }} \
+                    --kernel_offset ${{ env.KERNEL_OFFSET }} \
+                    --ramdisk_offset ${{ env.RAMDISK_OFFSET }} \
+                    --tags_offset ${{ env.TAGS_OFFSET }} \
+                    --pagesize ${{ env.PAGESIZE }} \
+                    --second_offset ${{ env.SECOND_OFFSET }} \
+                    --ramdisk ./tmp_mkboot/initrd.img \
+                    --cmdline "console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash" \
+                    --kernel ./tmp_mkboot/kernel-dtb -o ./tmp_mkboot/boot.img
+          img2simg ./root.img ./rootfs.img
+          zip root.zip rootfs.img
+          cp root.zip /workdir/
+          cp ./tmp_mkboot/boot.img /workdir/
+      - name: Upload image to Release
+        uses: ncipollo/release-action@main
+        if: steps.compile.outputs.status == 'success' && !cancelled()
+        with:
+          tag: debian_for_${{ inputs.device_code }}_with_gcc
+          artifacts: /workdir/*
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            This is Linux Kernel for ${{ inputs.device_code }}
