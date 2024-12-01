@@ -19,11 +19,26 @@ on:
         description: "Apply CJKTTY patch"
         required: true
         default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
       add_firmware:
-          description: "add_firmware"
-          required: true
-          default: "false"
-
+        description: "Add firmware to the build"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      use_clang:
+        description: "Use Clang as the compiler"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
 env:
   TZ: Asia/Shanghai
 
@@ -41,7 +56,7 @@ jobs:
         run: |
           sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo -E apt-get -qq update
-          sudo -E apt-get -qq install -y binfmt-support qemu-user-static  kernel-package fakeroot simg2img img2simg mkbootimg bison libelf-dev flex gcc-aarch64-linux-gnu pkg-config libncurses-dev libssl-dev unzip git bc devscripts debhelper
+          sudo -E apt-get -qq install -y binfmt-support qemu-user-static  kernel-package abootimg fakeroot simg2img img2simg mkbootimg bison libelf-dev flex gcc-aarch64-linux-gnu pkg-config libncurses-dev libssl-dev unzip git bc devscripts debhelper
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
           sudo timedatectl set-timezone "$TZ"
@@ -74,7 +89,9 @@ jobs:
           export ARCH=arm64
           make clean
           make mrproper
-          #cjk补丁可以去https://github.com/zhmars/cjktty-patches找支持到6.9，6.9，6.8的补丁在pull里
+          ######################################################################
+          #cjk补丁可以去https://github.com/zhmars/cjktty-patches找支持到6.9，6.9，6.8的补丁在pull里#
+          ######################################################################
           if [ "${{ inputs.apply_cjktty_patch }}" == "true" ]; then
             wget https://raw.githubusercontent.com/zhmars/cjktty-patches/refs/heads/master/cjktty-add-cjk32x32-font-data.patch
             wget https://raw.githubusercontent.com/kschen202115/Armbian-build/refs/heads/main/cjktty-6.9.patch
@@ -90,8 +107,15 @@ jobs:
           export PATH=/usr/lib/llvm-19/bin:$PATH
           export CROSS_COMPILE=aarch64-linux-gnu-
           export ARCH=arm64
-          make ${{ inputs.device_code }}_defconfig 
-          make deb-pkg -j$(nproc)
+
+          if [ "${{ inputs.use_clang }}" == "true" ]; then
+            make ${{ inputs.device_code }}_defconfig ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1
+            make deb-pkg ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1 -j$(nproc)
+          fi
+          if [ "${{ inputs.use_clang }}" == "false" ]; then
+            make ${{ inputs.device_code }}_defconfig 
+            make deb-pkg -j$(nproc)
+          fi
           cd ..
           cp *.deb /workdir
           cp *.deb /rootfs
@@ -108,11 +132,17 @@ jobs:
       - name: Prepare Environment
         run: |
           cd /rootfs
+          ###########################################################
+          #如果需要使用自定义rootfs，请替换下面链接，并修改对应代码
+          #rootfs链接
           wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_debian/root.zip
+          #解压并清除
           unzip root.zip
           sudo rm -rf root.zip
+          #转化格式并清除
           simg2img ./rootfs.img ./root.img
           sudo rm -rf rootfs.img
+          
           sudo mount root.img /mnt/chroot
           sudo mount --bind /proc /mnt/chroot/proc
           sudo mount --bind /dev /mnt/chroot/dev
@@ -145,49 +175,48 @@ jobs:
           cp ./tmp_mkboot/initrd* ./tmp_mkboot/initrd.img
           cp ./tmp_mkboot/*.dtb ./tmp_mkboot/dtb
           cat ./tmp_mkboot/Image.gz ./tmp_mkboot/dtb > ./tmp_mkboot/kernel-dtb
+          # 解包 boot.img
           abootimg -x boot.img
-          # 显示提取的 boot.img 信息
-          echo "Extracted boot.img information:"
+          # 修改 cmdline 参数
+          sed -i 's|^cmdline=.*|cmdline=console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash|' bootimg.cfg
+          # 显示修改后的 bootimg.cfg
+          echo "Updated bootimg.cfg:"
           cat bootimg.cfg
-          # 从 bootimg.cfg 提取参数
-          #CMDLINE=$(grep "cmdline" bootimg.cfg | cut -d '=' -f 2-)
-          BASE=$(grep "base" bootimg.cfg | cut -d '=' -f 2-)
-          PAGESIZE=$(grep "pagesize" bootimg.cfg | cut -d '=' -f 2-)
-          RAMDISK_OFFSET=$(grep "ramdisk_offset" bootimg.cfg | cut -d '=' -f 2-)
-          SECOND_OFFSET=$(grep "second_offset" bootimg.cfg | cut -d '=' -f 2-)
-          TAGS_OFFSET=$(grep "tags_offset" bootimg.cfg | cut -d '=' -f 2-)
-          KERNEL_OFFSET=$(grep "kernel_offset" bootimg.cfg | cut -d '=' -f 2-)
-          ########################################################
-          # 根据自己的机型修改，
-          ########################################################
-          # mkbootimg --base 0x80000000 \
-          #           --kernel_offset 0x00008000 \
-          #           --ramdisk_offset 0x01000000 \
-          #           --tags_offset 0x00000100 \
-          #           --pagesize 4096 \
-          #           --second_offset 0x00f00000 \
-          #           --ramdisk ./tmp_mkboot/initrd.img \
-          #           --cmdline "console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash" \
-          #           --kernel ./tmp_mkboot/kernel-dtb -o ./tmp_mkboot/boot.img
-          # 使用提取的参数重建 boot.img
-          mkbootimg --base ${{ env.BASE }} \
-                    --kernel_offset ${{ env.KERNEL_OFFSET }} \
-                    --ramdisk_offset ${{ env.RAMDISK_OFFSET }} \
-                    --tags_offset ${{ env.TAGS_OFFSET }} \
-                    --pagesize ${{ env.PAGESIZE }} \
-                    --second_offset ${{ env.SECOND_OFFSET }} \
-                    --ramdisk ./tmp_mkboot/initrd.img \
-                    --cmdline "console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash" \
-                    --kernel ./tmp_mkboot/kernel-dtb -o ./tmp_mkboot/boot.img
+          # 指定输出位置重新打包 boot.img
+          OUTPUT_PATH="/workdir/boot.img"
+          cp ./tmp_mkboot/initrd.img initrd.img
+          cp ./tmp_mkboot/kernel-dtb zImage
+          
+          # 自动计算新的 bootsize
+          KERNEL_SIZE=$(stat -c %s zImage)        # 获取内核大小
+          RAMDISK_SIZE=$(stat -c %s initrd.img)  # 获取 ramdisk 大小
+          PAGESIZE=4096                          # 页大小（默认）
+          ALIGN=$((PAGESIZE - 1))                # 对齐值
+          
+          # 计算实际大小（对齐页边界）
+          CALC_SIZE=$((KERNEL_SIZE + RAMDISK_SIZE + 2 * PAGESIZE))
+          BOOTSIZE=$(((CALC_SIZE + ALIGN) & ~ALIGN)) # 对齐到页边界
+          
+          # 给 Boot Image 加 1MB 额外空间（1048576 字节）
+          BOOTSIZE_WITH_EXTRA=$((BOOTSIZE + 1048576))
+          
+          # 更新 bootsize 参数
+          sed -i "s|^bootsize = .*|bootsize = 0x$(printf '%x' $BOOTSIZE_WITH_EXTRA)|" bootimg.cfg
+
+          # 显示修改后的 bootimg.cfg
+          echo "Updated bootimg.cfg:"
+          cat bootimg.cfg
+
+          abootimg --create "$OUTPUT_PATH" -f bootimg.cfg -k zImage -r initrd.img
           img2simg ./root.img ./rootfs.img
           zip root.zip rootfs.img
           cp root.zip /workdir/
-          cp ./tmp_mkboot/boot.img /workdir/
+          # cp ./tmp_mkboot/boot.img /workdir/
       - name: Upload image to Release
         uses: ncipollo/release-action@main
         if: steps.compile.outputs.status == 'success' && !cancelled()
         with:
-          tag: debian_for_${{ inputs.device_code }}_with_gcc
+          tag: debian_for_${{ inputs.device_code }}
           artifacts: /workdir/*
           allowUpdates: true
           token: ${{ secrets.GITHUB_TOKEN }}
