@@ -170,12 +170,12 @@ jobs:
           #           --cmdline "console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash" \
           #           --kernel ./tmp_mkboot/kernel-dtb -o ./tmp_mkboot/boot.img
           # 使用提取的参数重建 boot.img
-          mkbootimg --base ${{ env.BASE }} \
-                    --kernel_offset ${{ env.KERNEL_OFFSET }} \
-                    --ramdisk_offset ${{ env.RAMDISK_OFFSET }} \
-                    --tags_offset ${{ env.TAGS_OFFSET }} \
-                    --pagesize ${{ env.PAGESIZE }} \
-                    --second_offset ${{ env.SECOND_OFFSET }} \
+          mkbootimg --base "$BASE" \
+                    --kernel_offset "$KERNEL_OFFSET" \
+                    --ramdisk_offset "$RAMDISK_OFFSET" \
+                    --tags_offset "$TAGS_OFFSET" \
+                    --pagesize "$PAGESIZE" \
+                    --second_offset "$SECOND_OFFSET" \
                     --ramdisk ./tmp_mkboot/initrd.img \
                     --cmdline "console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash" \
                     --kernel ./tmp_mkboot/kernel-dtb -o ./tmp_mkboot/boot.img
