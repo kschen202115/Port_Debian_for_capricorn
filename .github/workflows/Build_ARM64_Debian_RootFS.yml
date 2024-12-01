@@ -18,9 +18,12 @@ jobs:
 
     - name: Create ARM64 Debian RootFS
       run: |
+        CODENAME=$(curl -s https://deb.debian.org/debian/dists/stable/Release | grep -oP 'Codename:\s+\K\w+')
+
+        echo "The Debian codename is: $CODENAME"
         mkdir -p rootfs
         # 创建 ARM64 的 Debian 基础系统
-        sudo debootstrap --arch=arm64 --foreign --verbose bullseye rootfs http://deb.debian.org/debian
+        sudo debootstrap --arch=arm64 --foreign --verbose $CODENAME rootfs http://ftp.us.debian.org/debian/
         sudo cp /usr/bin/qemu-aarch64-static rootfs/usr/bin/
         # 配置 chroot 环境
         sudo mount -t proc /proc rootfs/proc
