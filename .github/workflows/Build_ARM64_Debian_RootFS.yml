@@ -26,51 +26,61 @@ jobs:
         sudo debootstrap --arch=arm64 --foreign --verbose $CODENAME rootfs http://ftp.us.debian.org/debian/
         sudo cp /usr/bin/qemu-aarch64-static rootfs/usr/bin/
         # 配置 chroot 环境
-        sudo mount -t proc /proc rootfs/proc
-        sudo mount -t sysfs /sys rootfs/sys
-        sudo mount --bind /dev rootfs/dev
+        sudo mount --bind /proc rootfs/proc
         sudo mount --bind /dev/pts rootfs/dev/pts
+        sudo mount --bind /dev rootfs/dev
+        sudo mount --bind /sys rootfs/sys
         echo "##############"
         sudo chroot rootfs /debootstrap/debootstrap --second-stage --verbose
+        sudo umount rootfs/proc
+        sudo umount rootfs/sys
+        sudo umount rootfs/dev/pts
+        sudo umount rootfs/dev
 
     - name: Customize ARM64 RootFS
       run: |
+        sudo mount --bind /proc rootfs/proc
+        sudo mount --bind /dev/pts rootfs/dev/pts
+        sudo mount --bind /dev rootfs/dev
+        sudo mount --bind /sys rootfs/sys
 
         # 自定义配置（通过 chroot 进入 rootfs）
         sudo chroot rootfs /bin/bash -c "
           # 更新包列表
           apt-get update
 
-          # 安装软件包
-          apt-get install -y vim sudo curl openssh-server ssh net-tools ethtool ifupdown iputils htop vim kmod network-manager make nano fdisk git usbutils initramfs-tools
+          echo '# 安装软件包'
+          apt-get install -y vim sudo curl openssh-server ssh net-tools ethtool ifupdown iputils-ping  htop vim kmod network-manager make nano fdisk git usbutils initramfs-tools
 
-          # 添加用户 kschen 并设置密码
+          echo '# 添加用户 kschen 并设置密码'
           useradd -m -s /bin/bash kschen
           echo 'kschen:password' | chpasswd
 
-          # 将 kschen 添加到 sudo 组
+          echo '# 将 kschen 添加到 sudo 组'
           usermod -aG sudo kschen
 
-          # 配置 SSH 服务
+          echo '# 配置 SSH 服务'
           mkdir -p /home/kschen/.ssh
           chmod 700 /home/kschen/.ssh
           touch /home/kschen/.ssh/authorized_keys
           chmod 600 /home/kschen/.ssh/authorized_keys
           chown -R kschen:kschen /home/kschen/.ssh
 
-          # 设置 SSH 服务开机启动
+          echo '# 设置 SSH 服务开机启动'
           systemctl enable ssh
 
-          # 其他配置（如 DNS 和 motd）
+          echo '# 其他配置（如 DNS 和 motd）'
           echo 'nameserver 8.8.8.8' > /etc/resolv.conf
           echo 'Welcome to ARM64 Debian RootFS' > /etc/motd
         "
 
-        # 清理并卸载挂载点
+        echo '# # 清理并卸载挂载点'
+        df -h
         sudo umount rootfs/proc
         sudo umount rootfs/sys
         sudo umount rootfs/dev/pts
         sudo umount rootfs/dev
+        df -h
 
     - name: Create Disk Image
       run: |
@@ -79,7 +89,7 @@ jobs:
         sudo mkfs.ext4 -F rootfs.img
 
         # 将定制的 rootfs 写入镜像
-        mkdir -p /mnt/rootfs
+        sudo mkdir -p /mnt/rootfs
         sudo mount -o loop rootfs.img /mnt/rootfs
         sudo rsync -a rootfs/ /mnt/rootfs
         sudo umount /mnt/rootfs
