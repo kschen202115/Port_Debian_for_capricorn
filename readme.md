@@ -17,3 +17,6 @@ Port_Debian_for_capricorn
 
 注意这个包极度精简，很多基本软件都没有，第一次登录请执行 sudo resize2fs <分区> 不然大小只有5g
 
+默认中文环境，如果不打中文补丁，在tty下显示中文会乱码
+
+
