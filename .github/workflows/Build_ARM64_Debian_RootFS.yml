@@ -70,13 +70,13 @@ jobs:
           echo 'Welcome to ARM64 Debian RootFS' > /etc/motd
         "
 
-        echo '# # 清理并卸载挂载点'
-        df -h
-        sudo umount rootfs/proc
-        sudo umount rootfs/sys
-        sudo umount rootfs/dev/pts
-        sudo umount rootfs/dev
-        df -h
+        # echo '# # 清理并卸载挂载点'
+        # df -h
+        # sudo umount rootfs/proc
+        # sudo umount rootfs/sys
+        # sudo umount rootfs/dev/pts
+        # sudo umount rootfs/dev
+        # df -h
 
     - name: Create Disk Image
       run: |
