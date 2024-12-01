@@ -20,17 +20,18 @@ jobs:
       run: |
         mkdir -p rootfs
         # 创建 ARM64 的 Debian 基础系统
-        sudo debootstrap --arch=arm64 --foreign bullseye rootfs http://deb.debian.org/debian
+        sudo debootstrap --arch=arm64 --foreign --verbose bullseye rootfs http://deb.debian.org/debian
         sudo cp /usr/bin/qemu-aarch64-static rootfs/usr/bin/
-        sudo chroot rootfs /debootstrap/debootstrap --second-stage
-
-    - name: Customize ARM64 RootFS
-      run: |
         # 配置 chroot 环境
         sudo mount -t proc /proc rootfs/proc
         sudo mount -t sysfs /sys rootfs/sys
         sudo mount --bind /dev rootfs/dev
         sudo mount --bind /dev/pts rootfs/dev/pts
+        echo "##############"
+        sudo chroot rootfs /debootstrap/debootstrap --second-stage --verbose
+
+    - name: Customize ARM64 RootFS
+      run: |
 
         # 自定义配置（通过 chroot 进入 rootfs）
         sudo chroot rootfs /bin/bash -c "
