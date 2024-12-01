@@ -32,9 +32,17 @@ jobs:
         sudo mount --bind /sys rootfs/sys
         echo "##############"
         sudo chroot rootfs /debootstrap/debootstrap --second-stage --verbose
+        sudo umount rootfs/proc
+        sudo umount rootfs/sys
+        sudo umount rootfs/dev/pts
+        sudo umount rootfs/dev
 
     - name: Customize ARM64 RootFS
       run: |
+        sudo mount --bind /proc rootfs/proc
+        sudo mount --bind /dev/pts rootfs/dev/pts
+        sudo mount --bind /dev rootfs/dev
+        sudo mount --bind /sys rootfs/sys
 
         # 自定义配置（通过 chroot 进入 rootfs）
         sudo chroot rootfs /bin/bash -c "
@@ -67,10 +75,11 @@ jobs:
         "
 
         echo '# # 清理并卸载挂载点'
-        # sudo umount rootfs/proc
-        # sudo umount rootfs/sys
-        # sudo umount rootfs/dev/pts
-        # sudo umount rootfs/dev
+        df -h
+        sudo umount rootfs/proc
+        sudo umount rootfs/sys
+        sudo umount rootfs/dev/pts
+        sudo umount rootfs/dev
         df -h
 
     - name: Create Disk Image
@@ -80,7 +89,7 @@ jobs:
         sudo mkfs.ext4 -F rootfs.img
 
         # 将定制的 rootfs 写入镜像
-        mkdir -p /mnt/rootfs
+        sudo mkdir -p /mnt/rootfs
         sudo mount -o loop rootfs.img /mnt/rootfs
         sudo rsync -a rootfs/ /mnt/rootfs
         sudo umount /mnt/rootfs
