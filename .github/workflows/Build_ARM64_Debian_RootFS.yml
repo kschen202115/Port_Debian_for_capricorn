@@ -42,7 +42,7 @@ jobs:
           apt-get update
 
           # 安装软件包
-          apt-get install -y vim sudo curl openssh-server language-pack-en-base ssh net-tools ethtool ifupdown iputils-ping htop vim kmod network-manager make nano fdisk git usbutils initramfs-tools
+          apt-get install -y vim sudo curl openssh-server ssh net-tools ethtool ifupdown iputils htop vim kmod network-manager make nano fdisk git usbutils initramfs-tools
 
           # 添加用户 kschen 并设置密码
           useradd -m -s /bin/bash kschen
