@@ -27,8 +27,8 @@ jobs:
         sudo cp /usr/bin/qemu-aarch64-static rootfs/usr/bin/
         # 配置 chroot 环境
         sudo mount --bind /proc rootfs/proc
-        sudo mount --bind /dev rootfs/dev
         sudo mount --bind /dev/pts rootfs/dev/pts
+        sudo mount --bind /dev rootfs/dev
         sudo mount --bind /sys rootfs/sys
         echo "##############"
         sudo chroot rootfs /debootstrap/debootstrap --second-stage --verbose
@@ -66,11 +66,12 @@ jobs:
           echo 'Welcome to ARM64 Debian RootFS' > /etc/motd
         "
 
-        # 清理并卸载挂载点
-        sudo umount rootfs/proc
-        sudo umount rootfs/sys
-        sudo umount rootfs/dev/pts
-        sudo umount rootfs/dev
+        # # 清理并卸载挂载点
+        # sudo umount rootfs/proc
+        # sudo umount rootfs/sys
+        # sudo umount rootfs/dev/pts
+        # sudo umount rootfs/dev
+        df -h
 
     - name: Create Disk Image
       run: |
