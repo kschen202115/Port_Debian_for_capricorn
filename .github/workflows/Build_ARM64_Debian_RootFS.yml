@@ -112,7 +112,7 @@ jobs:
           echo 'nameserver 8.8.8.8' > /etc/resolv.conf
           echo 'Welcome to ARM64 Debian RootFS' > /etc/motd
           sudo sed -i 's/ftp.us.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list
-          sed -i '/^HandlePowerKey=poweroff/d' /mnt/rootfs/etc/systemd/logind.conf
+          sed -i '/^HandlePowerKey=poweroff/d' /etc/systemd/logind.conf
           echo 'HandlePowerKey=ignore' >> /etc/systemd/logind.conf
           echo 'HandlePowerKeyLongPress=poweroff' >> /etc/systemd/logind.conf
 
