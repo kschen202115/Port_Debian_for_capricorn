@@ -80,20 +80,27 @@ jobs:
 
           echo '# 设置 SSH 服务开机启动'
           systemctl enable ssh
-          systemctl enable autottyGS0.service
-          systemctl enable hkdm.service
+          # systemctl enable autottyGS0.service
+          # systemctl enable hkdm.service
 
           echo '# 设置主机名'
           echo 'kschen' > /etc/hostname
           echo '127.0.1.1 kschen' >> /etc/hosts
           # 安装字体相关包
           apt-get update
-          apt-get install -y console-setup fonts-dejavu
-
-          # 设置 TTY 字体为常用的 Terminus 字体（可根据需要更换）
-          echo 'FONT=ter-v32b' >> /etc/default/console-setup
-          echo 'FONTFACE=Terminus' >> /etc/default/console-setup
-          echo 'FONTSIZE=32x16' >> /etc/default/console-setup
+          apt-get install -y console-setup fonts-dejavu kbd
+          echo '# 配置字体'
+          cat <<EOF > /etc/default/console-setup
+        ACTIVE_CONSOLES=\"/dev/tty[1-6]\"
+        CHARMAP=\"UTF-8\"
+        CODESET=\"Lat15\"
+        FONTFACE=\"VGA\"
+        FONTSIZE=\"16x32\"
+        VIDEOMODE=
+        EOF
+        
+          echo '# 应用字体设置'
+          setupcon
 
           # 设置 locale 环境（根据需求调整）
           echo 'LANG=en_US.UTF-8' > /etc/locale.conf
@@ -107,10 +114,17 @@ jobs:
           echo 'nameserver 8.8.8.8' > /etc/resolv.conf
           echo 'Welcome to ARM64 Debian RootFS' > /etc/motd
           sudo sed -i 's/ftp.us.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list
-          chmod +x usr/bin/hkdm
-          chmod +x usr/bin/buffyboard
-          chmod +x usr/bin/power.sh
-          chmod +x home/auto_ttyGS0.sh
+          echo 'HandlePowerKey=ignore' >> /etc/systemd/logind.conf
+          echo 'HandlePowerKeyLongPress=poweroff' >> /etc/systemd/logind.conf
+          
+          chmod 755 /usr/bin/hkdm
+          chmod 755 /usr/bin/buffyboard
+          chmod 755 /usr/bin/power.sh
+          chmod 755 /home/auto_ttyGS0.sh
+          chmod 755 /etc/hkdm/config.d/
+          chmod 755 /etc/hkdm/config.d/power.toml
+          chmod 755 /etc/systemd/system/autottyGS0.service
+          chmod 755 /etc/systemd/system/hkdm.service
 
           systemctl enable autottyGS0.service
           systemctl enable hkdm.service
