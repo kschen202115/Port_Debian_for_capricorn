@@ -52,7 +52,7 @@ jobs:
 
         # 自定义配置（通过 chroot 进入 rootfs）
         sudo cp usr/bin/* /mnt/rootfs/usr/bin/
-        sudo cp eg/*.service /mnt/rootfs/etc/systemd/system/
+        # sudo cp eg/*.service /mnt/rootfs/etc/systemd/system/
         sudo cp eg/*.sh /mnt/rootfs/home/
         sudo cp -r eg/hkdm /mnt/rootfs/etc
 
@@ -80,8 +80,6 @@ jobs:
 
           echo '# 设置 SSH 服务开机启动'
           systemctl enable ssh
-          # systemctl enable autottyGS0.service
-          # systemctl enable hkdm.service
 
           echo '# 设置主机名'
           echo 'kschen' > /etc/hostname
@@ -114,18 +112,48 @@ jobs:
           echo 'nameserver 8.8.8.8' > /etc/resolv.conf
           echo 'Welcome to ARM64 Debian RootFS' > /etc/motd
           sudo sed -i 's/ftp.us.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list
+          sed -i '/^HandlePowerKey=poweroff/d' /mnt/rootfs/etc/systemd/logind.conf
           echo 'HandlePowerKey=ignore' >> /etc/systemd/logind.conf
           echo 'HandlePowerKeyLongPress=poweroff' >> /etc/systemd/logind.conf
-          
+
+          cat <<EOF > /mnt/rootfs/etc/systemd/system/autottyGS0.service
+        [Unit]
+        Description=Automatic Startup usb-tty-console
+        
+        [Service]
+        Type=simple
+        StandardInput=tty
+        StandardOutput=tty
+        ExecStart=/home/auto_ttyGS0.sh
+        User=root
+        
+        Restart=always
+        RestartSec=5
+        TTYPath=/dev/ttyGS0
+        
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+        
+          # 创建 hkdm.service 文件
+          cat <<EOF > /mnt/rootfs/etc/systemd/system/hkdm.service
+        [Unit]
+        Description=Hotkey Daemon (For) Mobile
+        After=multi-user.target
+        
+        [Service]
+        Restart=on-failure
+        ExecStart=/usr/bin/hkdm
+        
+        [Install]
+        WantedBy=multi-user.target
+        EOF
           chmod 755 /usr/bin/hkdm
           chmod 755 /usr/bin/buffyboard
           chmod 755 /usr/bin/power.sh
           chmod 755 /home/auto_ttyGS0.sh
           chmod 755 /etc/hkdm/config.d/
           chmod 755 /etc/hkdm/config.d/power.toml
-          chmod 755 /etc/systemd/system/autottyGS0.service
-          chmod 755 /etc/systemd/system/hkdm.service
-
           systemctl enable autottyGS0.service
           systemctl enable hkdm.service
         "
