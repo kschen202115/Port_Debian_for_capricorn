@@ -61,7 +61,7 @@ jobs:
           apt-get update
 
           echo '# 安装软件包'
-          apt-get install -y vim sudo curl openssh-server ssh net-tools ethtool ifupdown iputils-ping  htop vim kmod network-manager make nano fdisk git usbutils initramfs-tools ntpdate
+          apt-get install -y vim sudo curl openssh-server ssh net-tools ethtool ifupdown iputils-ping  htop vim kmod network-manager make nano fdisk libevdev-dev git usbutils initramfs-tools ntpdate
 
           echo '# 添加用户 kschen 并设置密码'
           useradd -m -s /bin/bash kschen
