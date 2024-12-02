@@ -157,7 +157,8 @@ jobs:
           if [ "${{ inputs.add_firmware }}" == "true" ]; then
             #######################################
             #请自己添加firmware到仓库里，并取消注释
-            sudo cp -rf ./firmware/* /mnt/chroot/lib/firmware/
+            sudo cp -rf --no-dereference ./firmware/* /mnt/chroot/lib/firmware/ || true
+            # cp -f --no-dereference source_file destination || true
             #######################################
           fi
       - name: Install Kernel in chroot
