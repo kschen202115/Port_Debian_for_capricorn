@@ -16,5 +16,4 @@ while true; do
     # sleep 10
 done
 # agetty -L -i ttyGS0 115200 vt100
-echo "welcome to Umeko KlipperLinux console !"
 login -f kschen < /dev/ttyGS0
