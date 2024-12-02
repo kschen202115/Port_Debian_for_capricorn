@@ -175,10 +175,11 @@ jobs:
           cp ./tmp_mkboot/initrd* ./tmp_mkboot/initrd.img
           cp ./tmp_mkboot/*.dtb ./tmp_mkboot/dtb
           cat ./tmp_mkboot/Image.gz ./tmp_mkboot/dtb > ./tmp_mkboot/kernel-dtb
+          UUID=$(blkid ./root.img | sed -n 's/.*UUID="\([^"]*\)".*/\1/p')
           # 解包 boot.img
           abootimg -x boot.img
           # 修改 cmdline 参数
-          sed -i 's|^cmdline=.*|cmdline=console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash|' bootimg.cfg
+          sed -i 's|^cmdline=.*|cmdline=console=tty0 root=UUID=$UUID rw loglevel=3 splash|' bootimg.cfg
           # 显示修改后的 bootimg.cfg
           echo "Updated bootimg.cfg:"
           cat bootimg.cfg
