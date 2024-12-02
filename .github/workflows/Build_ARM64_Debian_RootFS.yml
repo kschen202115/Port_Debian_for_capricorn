@@ -101,7 +101,23 @@ jobs:
           echo '# 设置主机名'
           echo 'kschen' > /etc/hostname
           echo '127.0.1.1 kschen' >> /etc/hosts
+          # 安装字体相关包
+          apt-get update
+          apt-get install -y console-setup fonts-dejavu
 
+          # 设置 TTY 字体为常用的 Terminus 字体（可根据需要更换）
+          echo 'FONT=ter-v32b' >> /etc/default/console-setup
+          echo 'FONTFACE=Terminus' >> /etc/default/console-setup
+          echo 'FONTSIZE=32x16' >> /etc/default/console-setup
+
+          # 设置 locale 环境（根据需求调整）
+          echo 'LANG=en_US.UTF-8' > /etc/locale.conf
+          echo 'LC_ALL=en_US.UTF-8' >> /etc/locale.conf
+          locale-gen en_US.UTF-8
+
+          # 重新生成 initramfs，以便字体设置生效
+          update-initramfs -u
+          
           echo '# 其他配置（如 DNS 和 motd）'
           echo 'nameserver 8.8.8.8' > /etc/resolv.conf
           echo 'Welcome to ARM64 Debian RootFS' > /etc/motd
