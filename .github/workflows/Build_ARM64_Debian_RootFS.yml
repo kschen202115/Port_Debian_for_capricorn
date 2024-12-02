@@ -116,7 +116,9 @@ jobs:
           echo 'HandlePowerKey=ignore' >> /etc/systemd/logind.conf
           echo 'HandlePowerKeyLongPress=poweroff' >> /etc/systemd/logind.conf
 
-          cat <<EOF > /mnt/rootfs/etc/systemd/system/autottyGS0.service
+          
+
+          cat <<EOF > /etc/systemd/system/autottyGS0.service
         [Unit]
         Description=Automatic Startup usb-tty-console
         
@@ -136,7 +138,7 @@ jobs:
         EOF
         
           # 创建 hkdm.service 文件
-          cat <<EOF > /mnt/rootfs/etc/systemd/system/hkdm.service
+          cat <<EOF > /etc/systemd/system/hkdm.service
         [Unit]
         Description=Hotkey Daemon (For) Mobile
         After=multi-user.target
