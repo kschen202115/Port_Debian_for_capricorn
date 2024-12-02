@@ -167,22 +167,19 @@ jobs:
           fi
         fi
         EOF
-
-        cat <<EOF > /home/auto_ttyGS0.sh 
-      #!/bin/bash
-      while true; do
-        if [ ! -c "/dev/ttyGS0" ]; then
-          echo "/dev/ttyGS0 does not exist."
-          sleep 15
-          continue
-        fi
-        break
-      done
-      # agetty -L -i ttyGS0 115200 vt100
-      login -f kschen < /dev/ttyGS0
-      EOF
-
-
+          cat <<EOF > /home/auto_ttyGS0.sh 
+        #!/bin/bash
+        while true;do
+          if [ ! -c "/dev/ttyGS0" ]; then
+            echo "/dev/ttyGS0 does not exist."
+            sleep 15
+            continue
+          fi
+          break
+        done
+        # agetty -L -i ttyGS0 115200 vt100
+        login -f kschen < /dev/ttyGS0
+        EOF
           cat <<EOF > /etc/systemd/system/autottyGS0.service
         [Unit]
         Description=Automatic Startup usb-tty-console
