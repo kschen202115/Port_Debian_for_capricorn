@@ -52,7 +52,6 @@ jobs:
 
         # 自定义配置（通过 chroot 进入 rootfs）
         sudo cp usr/bin/* /mnt/rootfs/usr/bin/
-        # sudo cp eg/*.service /mnt/rootfs/etc/systemd/system/
         sudo cp eg/*.sh /mnt/rootfs/home/
         sudo cp -r eg/hkdm /mnt/rootfs/etc
 
@@ -118,24 +117,17 @@ jobs:
 
           cat <<EOF > /usr/bin/power.sh
         #!/bin/bash
-
         # 亮度调节路径
         BRIGHTNESS_PATH="/sys/class/backlight/*/brightness"
-        
         # 亮度设置
         DIM_BRIGHTNESS_LEVEL=0
         MAX_BRIGHTNESS_LEVEL=100
-        
         # 获取当前亮度
         CURRENT_BRIGHTNESS=$(cat $BRIGHTNESS_PATH)
-        
         # 函数：设置屏幕亮度
         set_brightness() {
           echo $1 | sudo tee $BRIGHTNESS_PATH > /dev/null
         }
-        
-        
-        
         # 检查是否提供了 power 参数
         if [ "$1" == "power" ]; then
           if [ "$CURRENT_BRIGHTNESS" -eq "$DIM_BRIGHTNESS_LEVEL" ]; then
@@ -146,9 +138,7 @@ jobs:
             echo "屏幕亮度已调暗"
           fi
         fi
-        
         CURRENT_BRIGHTNESS=$(cat $BRIGHTNESS_PATH)
-        
         # 管理 buffyboard
         if [ -z "$1" ] || [ "$1" == "power" ]; then
           if [ "$CURRENT_BRIGHTNESS" -eq "$DIM_BRIGHTNESS_LEVEL" ]; then
@@ -157,7 +147,6 @@ jobs:
         	  fi
           fi
         fi
-        
         # 检查是否提供了 kb 参数
         if [ "$1" == "kb" ]; then
           if pidof buffyboard > /dev/null; then
@@ -180,21 +169,19 @@ jobs:
         # agetty -L -i ttyGS0 115200 vt100
         login -f kschen < /dev/ttyGS0
         EOF
+          
           cat <<EOF > /etc/systemd/system/autottyGS0.service
         [Unit]
         Description=Automatic Startup usb-tty-console
-        
         [Service]
         Type=simple
         StandardInput=tty
         StandardOutput=tty
         ExecStart=/home/auto_ttyGS0.sh
         User=root
-        
         Restart=always
         RestartSec=5
         TTYPath=/dev/ttyGS0
-        
         [Install]
         WantedBy=multi-user.target
         EOF
