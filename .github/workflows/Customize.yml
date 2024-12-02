@@ -184,7 +184,7 @@ jobs:
           # 解包 boot.img
           abootimg -x boot.img
           # 修改 cmdline 参数
-          sed -i 's|^cmdline=.*|cmdline=console=tty0 root=UUID=$UUID rw loglevel=3 splash|' bootimg.cfg
+          sed -i 's|^cmdline = .*|cmdline = console=tty0 root=UUID=$UUID rw loglevel=3 splash|' bootimg.cfg
           # 显示修改后的 bootimg.cfg
           echo "Updated bootimg.cfg:"
           cat bootimg.cfg
