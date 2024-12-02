@@ -39,6 +39,10 @@ on:
         options:
           - "true"
           - "false"
+      rootfs_url:
+        description: "root.zip URL"
+        required: true
+        default: "https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_debian/root.zip"
 env:
   TZ: Asia/Shanghai
 
@@ -135,7 +139,7 @@ jobs:
           ###########################################################
           #如果需要使用自定义rootfs，请替换下面链接，并修改对应代码
           #rootfs链接
-          wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_debian/root.zip
+          wget ${{ inputs.rootfs_url }}
           #解压并清除
           unzip root.zip
           sudo rm -rf root.zip
@@ -199,7 +203,7 @@ jobs:
           BOOTSIZE=$(((CALC_SIZE + ALIGN) & ~ALIGN)) # 对齐到页边界
           
           # 给 Boot Image 加 1MB 额外空间（1048576 字节）
-          BOOTSIZE_WITH_EXTRA=$((BOOTSIZE + 1048576))
+          BOOTSIZE_WITH_EXTRA=$((BOOTSIZE + 0))
           
           # 更新 bootsize 参数
           sed -i "s|^bootsize = .*|bootsize = 0x$(printf '%x' $BOOTSIZE_WITH_EXTRA)|" bootimg.cfg
