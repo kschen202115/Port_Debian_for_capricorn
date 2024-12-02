@@ -66,16 +66,21 @@ jobs:
         sudo mount --bind /sys /mnt/rootfs/sys
 
         # 自定义配置（通过 chroot 进入 rootfs）
+        sudo cp usr/bin/* /mnt/rootfs/usr/bin/
+        sudo cp eg/*.service /mnt/rootfs/etc/systemd/system/
+        sudo cp eg/*.sh /mnt/rootfs/home/
+        sudo cp -r eg/hkdm /mnt/rootfs/etc
+
         sudo chroot /mnt/rootfs /bin/bash -c "
           # 更新包列表
           apt-get update
 
           echo '# 安装软件包'
-          apt-get install -y vim sudo curl openssh-server ssh net-tools ethtool ifupdown iputils-ping  htop vim kmod network-manager make nano fdisk git usbutils initramfs-tools
+          apt-get install -y vim sudo curl openssh-server ssh net-tools ethtool ifupdown iputils-ping  htop vim kmod network-manager make nano fdisk git usbutils initramfs-tools ntpdate
 
           echo '# 添加用户 kschen 并设置密码'
           useradd -m -s /bin/bash kschen
-          echo 'kschen:password' | chpasswd
+          echo 'kschen:1' | chpasswd
 
           echo '# 将 kschen 添加到 sudo 组'
           usermod -aG sudo kschen
@@ -86,34 +91,39 @@ jobs:
           touch /home/kschen/.ssh/authorized_keys
           chmod 600 /home/kschen/.ssh/authorized_keys
           chown -R kschen:kschen /home/kschen/.ssh
+          sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
 
           echo '# 设置 SSH 服务开机启动'
           systemctl enable ssh
+          systemctl enable autottyGS0.service
+          systemctl enable hkdm.service
+
+          echo '# 设置主机名'
+          echo 'kschen' > /etc/hostname
+          echo '127.0.1.1 kschen' >> /etc/hosts
 
           echo '# 其他配置（如 DNS 和 motd）'
           echo 'nameserver 8.8.8.8' > /etc/resolv.conf
           echo 'Welcome to ARM64 Debian RootFS' > /etc/motd
-        "
+          sudo sed -i 's/ftp.us.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list
+          chmod +x usr/bin/hkdm
+          chmod +x usr/bin/buffyboard
+          chmod +x usr/bin/power.sh
+          chmod +x home/auto_ttyGS0.sh
 
-        # echo '# # 清理并卸载挂载点'
-        # df -h
-        # sudo umount /mnt/rootfs/proc
-        # sudo umount /mnt/rootfs/sys
-        # sudo umount /mnt/rootfs/dev/pts
-        # sudo umount /mnt/rootfs/dev
+          systemctl enable autottyGS0.service
+          systemctl enable hkdm.service
+        "
         sudo df -h
-        #sudo du -sh ./rootfs
 
 
     - name: Compress rootfs.img
       run: |
-       df -ah
        img2simg ./root.img ./rootfs.img
        zip root.zip rootfs.img
   
     - name: Upload image to Release
       uses: ncipollo/release-action@main
-      if: steps.compile.outputs.status == 'success' && !cancelled()
       with:
         tag: ARM64_Debian_RootFS
         artifacts: root.zip
