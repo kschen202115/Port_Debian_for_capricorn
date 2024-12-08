@@ -1,0 +1,20 @@
+[Unit]
+Description=Automatic Startup usb-tty-console
+
+[Service]
+Type=simple
+StandardInput=tty
+StandardOutput=tty
+ExecStart=/home/auto_ttyGS0.sh
+User=root
+# Group=umeko
+Restart=always
+RestartSec=5
+TTYPath=/dev/ttyGS0
+
+
+[Install]
+WantedBy=multi-user.target
+
+
+

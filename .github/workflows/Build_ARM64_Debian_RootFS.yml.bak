@@ -1,0 +1,227 @@
+name: Build ARM64 Debian RootFS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-arm64-rootfs:
+    runs-on: ubuntu-latest
+
+    steps:
+      
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y debootstrap qemu-utils qemu-user-static zip img2simg
+    - name: Create Disk Image
+      run: |
+        # 创建空白磁盘镜像
+        sudo qemu-img create -f raw root.img 2G
+        sudo mkfs.ext4 -F root.img
+
+        # 将定制的 rootfs 写入镜像
+        sudo mkdir -p /mnt/rootfs
+        sudo mount -o loop root.img /mnt/rootfs
+        #sudo umount /mnt/rootfs
+    - name: Create ARM64 Debian RootFS
+      run: |
+        CODENAME=$(curl -s https://deb.debian.org/debian/dists/stable/Release | grep -oP 'Codename:\s+\K\w+')
+
+        echo "The Debian codename is: $CODENAME"
+        mkdir -p rootfs
+        # 创建 ARM64 的 Debian 基础系统
+        sudo debootstrap --arch=arm64 --foreign --verbose $CODENAME /mnt/rootfs http://ftp.us.debian.org/debian/
+        sudo cp /usr/bin/qemu-aarch64-static /mnt/rootfs/usr/bin/
+        # 配置 chroot 环境
+        sudo mount --bind /proc /mnt/rootfs/proc
+        sudo mount --bind /dev/pts /mnt/rootfs/dev/pts
+        sudo mount --bind /dev /mnt/rootfs/dev
+        sudo mount --bind /sys /mnt/rootfs/sys
+        echo "##############"
+        sudo chroot /mnt/rootfs /debootstrap/debootstrap --second-stage --verbose
+
+    - name: Customize ARM64 RootFS
+      run: |
+        sudo mount --bind /proc /mnt/rootfs/proc
+        sudo mount --bind /dev/pts /mnt/rootfs/dev/pts
+        sudo mount --bind /dev /mnt/rootfs/dev
+        sudo mount --bind /sys /mnt/rootfs/sys
+
+        # 自定义配置（通过 chroot 进入 rootfs）
+        sudo cp usr/bin/* /mnt/rootfs/usr/bin/
+        sudo cp eg/*.sh /mnt/rootfs/home/
+        sudo cp -r eg/hkdm /mnt/rootfs/etc
+
+        sudo chroot /mnt/rootfs /bin/bash -c "
+          # 更新包列表
+          apt-get update
+
+          echo '# 安装软件包'
+          apt-get install -y vim sudo curl openssh-server ssh net-tools ethtool ifupdown iputils-ping  htop vim kmod network-manager make nano fdisk libevdev-dev git usbutils initramfs-tools ntpdate
+
+          echo '# 添加用户 kschen 并设置密码'
+          useradd -m -s /bin/bash kschen
+          echo 'kschen:1' | chpasswd
+
+          echo '# 将 kschen 添加到 sudo 组'
+          usermod -aG sudo kschen
+
+          echo '# 配置 SSH 服务'
+          mkdir -p /home/kschen/.ssh
+          chmod 700 /home/kschen/.ssh
+          touch /home/kschen/.ssh/authorized_keys
+          chmod 600 /home/kschen/.ssh/authorized_keys
+          chown -R kschen:kschen /home/kschen/.ssh
+          sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+          echo '# 设置 SSH 服务开机启动'
+          systemctl enable ssh
+
+          echo '# 设置主机名'
+          echo 'kschen' > /etc/hostname
+          echo '127.0.1.1 kschen' >> /etc/hosts
+          # 安装字体相关包
+          apt-get update
+          apt-get install -y console-setup fonts-dejavu kbd
+          echo '# 配置字体'
+          cat <<EOF > /etc/default/console-setup
+        ACTIVE_CONSOLES=\"/dev/tty[1-6]\"
+        CHARMAP=\"UTF-8\"
+        CODESET=\"Lat15\"
+        FONTFACE=\"VGA\"
+        FONTSIZE=\"16x32\"
+        VIDEOMODE=
+        EOF
+        
+          echo '# 应用字体设置'
+          setupcon
+
+          # 设置 locale 环境（根据需求调整）
+          echo 'LANG=en_US.UTF-8' > /etc/locale.conf
+          echo 'LC_ALL=en_US.UTF-8' >> /etc/locale.conf
+          locale-gen en_US.UTF-8
+
+          # 重新生成 initramfs，以便字体设置生效
+          update-initramfs -u
+          
+          echo '# 其他配置（如 DNS 和 motd）'
+          echo 'nameserver 8.8.8.8' > /etc/resolv.conf
+          echo 'Welcome to ARM64 Debian RootFS' > /etc/motd
+          sudo sed -i 's/ftp.us.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list
+          sed -i '/^HandlePowerKey=poweroff/d' /etc/systemd/logind.conf
+          echo 'HandlePowerKey=ignore' >> /etc/systemd/logind.conf
+          echo 'HandlePowerKeyLongPress=poweroff' >> /etc/systemd/logind.conf
+
+          cat <<EOF > /usr/bin/power.sh
+        #!/bin/bash
+        # 亮度调节路径
+        BRIGHTNESS_PATH="/sys/class/backlight/*/brightness"
+        # 亮度设置
+        DIM_BRIGHTNESS_LEVEL=0
+        MAX_BRIGHTNESS_LEVEL=100
+        # 获取当前亮度
+        CURRENT_BRIGHTNESS=$(cat $BRIGHTNESS_PATH)
+        # 函数：设置屏幕亮度
+        set_brightness() {
+          echo $1 | sudo tee $BRIGHTNESS_PATH > /dev/null
+        }
+        # 检查是否提供了 power 参数
+        if [ "$1" == "power" ]; then
+          if [ "$CURRENT_BRIGHTNESS" -eq "$DIM_BRIGHTNESS_LEVEL" ]; then
+            set_brightness $MAX_BRIGHTNESS_LEVEL
+            echo "屏幕亮度已设置为最大值"
+          else
+            set_brightness $DIM_BRIGHTNESS_LEVEL
+            echo "屏幕亮度已调暗"
+          fi
+        fi
+        CURRENT_BRIGHTNESS=$(cat $BRIGHTNESS_PATH)
+        # 管理 buffyboard
+        if [ -z "$1" ] || [ "$1" == "power" ]; then
+          if [ "$CURRENT_BRIGHTNESS" -eq "$DIM_BRIGHTNESS_LEVEL" ]; then
+            if pidof buffyboard > /dev/null; then
+        	    sudo kill $(pidof buffyboard)
+        	  fi
+          fi
+        fi
+        # 检查是否提供了 kb 参数
+        if [ "$1" == "kb" ]; then
+          if pidof buffyboard > /dev/null; then
+            sudo kill $(pgrep -x buffyboard)
+          else
+            sudo buffyboard &
+          fi
+        fi
+        EOF
+          cat <<EOF > /home/auto_ttyGS0.sh 
+        #!/bin/bash
+        while true;do
+          if [ ! -c "/dev/ttyGS0" ]; then
+            echo "/dev/ttyGS0 does not exist."
+            sleep 15
+            continue
+          fi
+          break
+        done
+        # agetty -L -i ttyGS0 115200 vt100
+        login -f kschen < /dev/ttyGS0
+        EOF
+          
+          cat <<EOF > /etc/systemd/system/autottyGS0.service
+        [Unit]
+        Description=Automatic Startup usb-tty-console
+        [Service]
+        Type=simple
+        StandardInput=tty
+        StandardOutput=tty
+        ExecStart=/home/auto_ttyGS0.sh
+        User=root
+        Restart=always
+        RestartSec=5
+        TTYPath=/dev/ttyGS0
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+        
+          # 创建 hkdm.service 文件
+          cat <<EOF > /etc/systemd/system/hkdm.service
+        [Unit]
+        Description=Hotkey Daemon (For) Mobile
+        After=multi-user.target
+        
+        [Service]
+        Restart=on-failure
+        ExecStart=/usr/bin/hkdm
+        
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+          chmod 755 /usr/bin/hkdm
+          chmod 755 /usr/bin/buffyboard
+          chmod 755 /usr/bin/power.sh
+          chmod 755 /home/auto_ttyGS0.sh
+          chmod 755 /etc/hkdm/config.d/
+          chmod 755 /etc/hkdm/config.d/power.toml
+          systemctl enable autottyGS0.service
+          systemctl enable hkdm.service
+        "
+        sudo df -h
+
+
+    - name: Compress rootfs.img
+      run: |
+       img2simg ./root.img ./rootfs.img
+       zip root.zip rootfs.img
+  
+    - name: Upload image to Release
+      uses: ncipollo/release-action@main
+      with:
+        tag: ARM64_Debian_RootFS
+        artifacts: root.zip
+        allowUpdates: true
+        token: ${{ secrets.GITHUB_TOKEN }}
+        body: |
+          ARM64_Debian_RootFS

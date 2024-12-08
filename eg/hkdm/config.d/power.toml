@@ -1,0 +1,22 @@
+[[events]]
+# Name of the event (optional)
+name = "kb"
+# The type of the event
+event_type = "EV_KEY"
+# Only valid for EV_KEY events, should the command be fired on a press or release?
+key_state = "released"
+# The ordering of the keys here matters, all but the last key are treated like
+# "modifier" keys, the command will only be run if they are pressed.
+# The last key is the "action" key, the command will fire when it matches
+# keys_state. In this case holding the volume down button and releasing 
+# the power button will cause the command to be run
+keys = ["KEY_VOLUMEDOWN"]
+command = "/usr/bin/power.sh kb"
+[[events]]
+name = "power"
+event_type = "EV_KEY"
+# And here, releasing it causes the command to be run
+key_state = "released"
+keys = ["KEY_POWER"]
+command = "/usr/bin/power.sh power"
+

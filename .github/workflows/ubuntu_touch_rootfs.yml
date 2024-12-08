@@ -1,0 +1,47 @@
+name: Build ARM64 Debian RootFS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-arm64-rootfs:
+    runs-on: ubuntu-latest
+
+    steps:
+      
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y debootstrap qemu-utils qemu-user-static zip img2simg
+    - name: Create Disk Image
+      run: |
+        # 创建空白磁盘镜像
+        sudo qemu-img create -f raw root.img 2G
+        sudo mkfs.ext4 -F root.img
+
+        # 将定制的 rootfs 写入镜像
+        sudo mkdir -p /mnt/rootfs
+        sudo mount -o loop root.img /mnt/rootfs
+        wget https://ci.ubports.com/job/xenial-mainline-edge-pine-rootfs-arm64/lastSuccessfulBuild/artifact/out/ubuntu-touch-xenial-edge-pine-arm64-rootfs.tar.gz
+        sudo tar -xvzf ubuntu-touch-xenial-edge-pine-arm64-rootfs.tar.gz -C /mnt/rootfs
+        
+
+
+   
+    - name: Compress rootfs.img
+      run: |
+       img2simg ./root.img ./rootfs.img
+       zip root.zip rootfs.img
+  
+    - name: Upload image to Release
+      uses: ncipollo/release-action@main
+      with:
+        tag: ARM64_ubuntu_touch_RootFS
+        artifacts: root.zip
+        allowUpdates: true
+        token: ${{ secrets.GITHUB_TOKEN }}
+        body: |
+          ARM64_Debian_RootFS

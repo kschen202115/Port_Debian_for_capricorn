@@ -15,6 +15,8 @@ Port_Debian_for_capricorn
 
 这个包是基于Debian12，自带串口登录（内核支持），tty键盘（音量键开关），电源键开关屏幕长按关机
 
+极度建议使用自己的rootfs，这些都可以在对应网站上找到，mobian，kail，ubuntu
+
 注意这个包极度精简，很多基本软件都没有，第一次登录请执行 sudo resize2fs <分区> 不然大小只有5g
 
 默认中文环境，如果不打中文补丁，在tty下显示中文会乱码

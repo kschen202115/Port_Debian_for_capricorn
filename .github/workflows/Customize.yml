@@ -39,6 +39,10 @@ on:
         options:
           - "true"
           - "false"
+      rootfs_url:
+        description: "root.zip URL"
+        required: true
+        default: "https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_debian/root.zip"
 env:
   TZ: Asia/Shanghai
 
@@ -135,7 +139,7 @@ jobs:
           ###########################################################
           #如果需要使用自定义rootfs，请替换下面链接，并修改对应代码
           #rootfs链接
-          wget https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_debian/root.zip
+          wget ${{ inputs.rootfs_url }}
           #解压并清除
           unzip root.zip
           sudo rm -rf root.zip
@@ -153,7 +157,8 @@ jobs:
           if [ "${{ inputs.add_firmware }}" == "true" ]; then
             #######################################
             #请自己添加firmware到仓库里，并取消注释
-            sudo cp -rf ./firmware/* /mnt/chroot/lib/firmware/
+            sudo cp -rf --no-dereference ./firmware/* /mnt/chroot/lib/firmware/ || true
+            # cp -f --no-dereference source_file destination || true
             #######################################
           fi
       - name: Install Kernel in chroot
@@ -175,10 +180,11 @@ jobs:
           cp ./tmp_mkboot/initrd* ./tmp_mkboot/initrd.img
           cp ./tmp_mkboot/*.dtb ./tmp_mkboot/dtb
           cat ./tmp_mkboot/Image.gz ./tmp_mkboot/dtb > ./tmp_mkboot/kernel-dtb
+          UUID=$(blkid ./root.img | sed -n 's/.*UUID="\([^"]*\)".*/\1/p')
           # 解包 boot.img
           abootimg -x boot.img
           # 修改 cmdline 参数
-          sed -i 's|^cmdline=.*|cmdline=console=tty0 root=UUID=cf0a4308-8a5e-4f83-8750-9dfe2bb0e336 rw loglevel=3 splash|' bootimg.cfg
+          sed -i "s|^cmdline = .*|cmdline = console=tty0 root=UUID=$UUID rw loglevel=3 splash|" bootimg.cfg
           # 显示修改后的 bootimg.cfg
           echo "Updated bootimg.cfg:"
           cat bootimg.cfg
@@ -198,7 +204,7 @@ jobs:
           BOOTSIZE=$(((CALC_SIZE + ALIGN) & ~ALIGN)) # 对齐到页边界
           
           # 给 Boot Image 加 1MB 额外空间（1048576 字节）
-          BOOTSIZE_WITH_EXTRA=$((BOOTSIZE + 1048576))
+          BOOTSIZE_WITH_EXTRA=$((BOOTSIZE + 0))
           
           # 更新 bootsize 参数
           sed -i "s|^bootsize = .*|bootsize = 0x$(printf '%x' $BOOTSIZE_WITH_EXTRA)|" bootimg.cfg
