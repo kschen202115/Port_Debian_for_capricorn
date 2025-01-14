@@ -83,6 +83,7 @@ jobs:
           sudo ./llvm.sh 19
           git clone --depth 1 --branch "${{ inputs.kernel_branch }}" ${{ inputs.kernel_repo }} linux
           ls
+          openssl version
       - name: Patch kernel
         id: patch
         run: |
