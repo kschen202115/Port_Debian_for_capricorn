@@ -112,15 +112,15 @@ jobs:
           export PATH=/usr/lib/llvm-19/bin:$PATH
           export CROSS_COMPILE=aarch64-linux-gnu-
           export ARCH=arm64
-          export DEB_BUILD_OPTIONS="nocheck"#跳过依赖检验，对于6.12内核源码
+          #export DEB_BUILD_OPTIONS="nocheck"#跳过依赖检验，对于6.12内核源码
 
           if [ "${{ inputs.use_clang }}" == "true" ]; then
             make ${{ inputs.device_code }}_defconfig ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1
-            make deb-pkg ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1 -j$(nproc)
+            make deb-pkg ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1 -j$(nproc) KDEB_OPTIONS="-d"
           fi
           if [ "${{ inputs.use_clang }}" == "false" ]; then
             make ${{ inputs.device_code }}_defconfig 
-            make deb-pkg -j$(nproc)
+            make deb-pkg -j$(nproc) KDEB_OPTIONS="-d"
           fi
           cd ..
           cp *.deb /workdir
