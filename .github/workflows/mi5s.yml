@@ -1,4 +1,4 @@
-name: 自定义
+name: mi5s
 on:
   repository_dispatch:
   workflow_dispatch:
