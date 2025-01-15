@@ -1,0 +1,247 @@
+name: 自定义
+on:
+  repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      kernel_repo:
+        description: "Kernel repository URL"
+        required: true
+        default: "https://gitlab.com/msm8996-mainline/linux.git"
+      kernel_branch:
+        description: "Kernel branch"
+        required: true
+        default: "v6.12.1-msm8996"
+      device_code:
+        description: "Device codename"
+        required: true
+        default: "capricorn"
+      apply_cjktty_patch:
+        description: "Apply patch"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      add_firmware:
+        description: "Add firmware to the build"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      use_clang:
+        description: "Use Clang as the compiler"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      rootfs_url:
+        description: "root.zip URL"
+        required: true
+        default: "https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_debian/root.zip"
+env:
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    if: github.event.repository.owner.id == github.event.sender.id
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Initialization environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          echo "deb [arch=amd64] http://azure.archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse" | sudo tee /etc/apt/sources.list
+          echo "deb [arch=amd64] http://azure.archive.ubuntu.com/ubuntu/ focal-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=amd64] http://azure.archive.ubuntu.com/ubuntu/ focal-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=amd64] http://azure.archive.ubuntu.com/ubuntu/ focal-backports main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://azure.ports.ubuntu.com/ubuntu-ports/ focal main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://azure.ports.ubuntu.com/ubuntu-ports/ focal-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://azure.ports.ubuntu.com/ubuntu-ports/ focal-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://azure.ports.ubuntu.com/ubuntu-ports/ focal-backports main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+
+          # 添加 ARM64 架构支持
+          sudo dpkg --add-architecture arm64
+          sudo -E apt-get -qq update || true
+          sudo -E apt-get -qq install -y binfmt-support qemu-user-static  kernel-package abootimg fakeroot simg2img img2simg mkbootimg bison libelf-dev flex gcc-aarch64-linux-gnu pkg-config libncurses-dev libssl-dev:native unzip git bc devscripts debhelper openssl libssl-dev:arm64
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone "$TZ"
+          sudo mkdir -p /mnt/chroot
+          sudo mkdir -p /workdir
+          sudo chown $USER:$GROUPS /workdir
+          sudo mkdir -p /rootfs/
+          sudo mkdir -p /rootfs/tmp_mkboot
+          sudo chown $USER:$GROUPS /rootfs
+          sudo chown $USER:$GROUPS /rootfs/tmp_mkboot
+          sudo chown $USER:$GROUPS /mnt/chroot
+          cp *.sh /rootfs/
+          cp boot.img /rootfs/
+          cp -rf ./firmware /rootfs/
+      - name: Download source code
+        id: down
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 19
+          git clone --depth 1 --branch "${{ inputs.kernel_branch }}" ${{ inputs.kernel_repo }} linux
+          ls
+          openssl version
+      - name: Patch kernel
+        id: patch
+        run: |
+          cp config linux/arch/arm64/configs/${{ inputs.device_code }}_defconfig
+          cp patch/*.patch ./linux
+          chmod +rw linux/arch/arm64/configs/${{ inputs.device_code }}_defconfig
+          cd linux
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export ARCH=arm64
+          make clean
+          make mrproper
+          ######################################################################
+          #cjk补丁可以去https://github.com/zhmars/cjktty-patches找支持到6.9，6.9，6.8的补丁在pull里#
+          ######################################################################
+          if [ "${{ inputs.apply_cjktty_patch }}" == "true" ]; then
+            wget https://raw.githubusercontent.com/zhmars/cjktty-patches/refs/heads/master/cjktty-add-cjk32x32-font-data.patch
+            #wget https://raw.githubusercontent.com/kschen202115/Armbian-build/refs/heads/main/cjktty-6.9.patch
+            git apply 0001-patch-mi5s.patch
+            git apply 0001-cjktty-6.12.1.patch
+            git apply cjktty-add-cjk32x32-font-data.patch
+          fi
+          git add .
+          cd ..
+      - name: Compile
+        id: compile
+        run: |
+          cd linux
+          export PATH=/usr/lib/llvm-19/bin:$PATH
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export ARCH=arm64
+          #export DEB_BUILD_OPTIONS="-d"
+          export KDEB_OPTIONS="-d"
+          #跳过依赖检验，对于6.12内核源码
+
+          if [ "${{ inputs.use_clang }}" == "true" ]; then
+            make ${{ inputs.device_code }}_defconfig ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1
+            make deb-pkg KDEB_OPTIONS="-d" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1 -j$(nproc)
+          fi
+          if [ "${{ inputs.use_clang }}" == "false" ]; then
+            make ${{ inputs.device_code }}_defconfig 
+            make deb-pkg KDEB_OPTIONS="-d" -j$(nproc)
+          fi
+          cd ..
+          cp *.deb /workdir
+          cp *.deb /rootfs
+          cp linux/arch/arm64/boot/Image.gz /workdir
+          cp linux/arch/arm64/boot/Image.gz /rootfs/tmp_mkboot/
+          cp linux/arch/arm64/boot/dts/qcom/*${{ inputs.device_code }}*.dtb /rootfs/tmp_mkboot/
+          tar -czf /workdir/dtb.tar.gz linux/arch/arm64/boot/dts/qcom/*${{ inputs.device_code }}*.dtb
+          find ./ -type f \( ! -name "*.ko" -a ! -name "modules.*" \) -exec rm -f {} \;
+          cd linux/
+          tar -czf /workdir/modules.tar.gz ./*
+          cd ..
+          echo "::set-output name=status::success"
+
+      - name: Prepare Environment
+        run: |
+          cd /rootfs
+          ###########################################################
+          #如果需要使用自定义rootfs，请替换下面链接，并修改对应代码
+          #rootfs链接
+          wget ${{ inputs.rootfs_url }}
+          #解压并清除
+          unzip root.zip
+          sudo rm -rf root.zip
+          #转化格式并清除
+          simg2img ./rootfs.img ./root.img
+          sudo rm -rf rootfs.img
+          
+          sudo mount root.img /mnt/chroot
+          sudo mount --bind /proc /mnt/chroot/proc
+          sudo mount --bind /dev /mnt/chroot/dev
+          sudo mount --bind /dev/pts /mnt/chroot/dev/pts
+          sudo mount --bind /sys /mnt/chroot/sys
+          sudo rm -rf  /mnt/chroot/tmp/linux-*.deb 
+          cp linux-* /mnt/chroot/tmp
+          if [ "${{ inputs.add_firmware }}" == "true" ]; then
+            #######################################
+            #请自己添加firmware到仓库里，并取消注释
+            sudo cp -rf --no-dereference ./firmware/* /mnt/chroot/lib/firmware/ || true
+            # cp -f --no-dereference source_file destination || true
+            #######################################
+          fi
+      - name: Install Kernel in chroot
+        run: |
+          sudo chroot /mnt/chroot /bin/bash -c "
+            cd /tmp
+            dpkg --get-selections | grep linux
+            dpkg -l | grep -E 'linux-headers|linux-image' | awk '{print \$2}' | xargs dpkg -P
+            rm -rf /lib/modules/*
+            dpkg -i linux*.deb
+            dpkg --get-selections | grep linux
+            ls /lib/modules
+          "
+      - name: Build boot image
+        run: |
+          cd /rootfs/
+          ls
+          cp /mnt/chroot/boot/initrd* ./tmp_mkboot/
+          cp ./tmp_mkboot/initrd* ./tmp_mkboot/initrd.img
+          cp ./tmp_mkboot/*.dtb ./tmp_mkboot/dtb
+          cat ./tmp_mkboot/Image.gz ./tmp_mkboot/dtb > ./tmp_mkboot/kernel-dtb
+          UUID=$(blkid ./root.img | sed -n 's/.*UUID="\([^"]*\)".*/\1/p')
+          # 解包 boot.img
+          abootimg -x boot.img
+          # 修改 cmdline 参数
+          sed -i "s|^cmdline = .*|cmdline = console=tty0 root=UUID=$UUID rw loglevel=3 splash|" bootimg.cfg
+          # 显示修改后的 bootimg.cfg
+          echo "Updated bootimg.cfg:"
+          cat bootimg.cfg
+          # 指定输出位置重新打包 boot.img
+          OUTPUT_PATH="/workdir/boot.img"
+          cp ./tmp_mkboot/initrd.img initrd.img
+          cp ./tmp_mkboot/kernel-dtb zImage
+          
+          # 自动计算新的 bootsize
+          KERNEL_SIZE=$(stat -c %s zImage)        # 获取内核大小
+          RAMDISK_SIZE=$(stat -c %s initrd.img)  # 获取 ramdisk 大小
+          PAGESIZE=4096                          # 页大小（默认）
+          ALIGN=$((PAGESIZE - 1))                # 对齐值
+          
+          # 计算实际大小（对齐页边界）
+          CALC_SIZE=$((KERNEL_SIZE + RAMDISK_SIZE + 2 * PAGESIZE))
+          BOOTSIZE=$(((CALC_SIZE + ALIGN) & ~ALIGN)) # 对齐到页边界
+          
+          # 给 Boot Image 加 1MB 额外空间（1048576 字节）
+          BOOTSIZE_WITH_EXTRA=$((BOOTSIZE + 0))
+          
+          # 更新 bootsize 参数
+          sed -i "s|^bootsize = .*|bootsize = 0x$(printf '%x' $BOOTSIZE_WITH_EXTRA)|" bootimg.cfg
+
+          # 显示修改后的 bootimg.cfg
+          echo "Updated bootimg.cfg:"
+          cat bootimg.cfg
+
+          abootimg --create "$OUTPUT_PATH" -f bootimg.cfg -k zImage -r initrd.img
+          img2simg ./root.img ./rootfs.img
+          zip root.zip rootfs.img
+          cp root.zip /workdir/
+          # cp ./tmp_mkboot/boot.img /workdir/
+      - name: Upload image to Release
+        uses: ncipollo/release-action@main
+        if: steps.compile.outputs.status == 'success' && !cancelled()
+        with:
+          tag: debian_for_${{ inputs.device_code }}
+          artifacts: /workdir/*
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            This is boot.img and rootfs.img(in the root.zip) for ${{ inputs.device_code }}
