@@ -59,19 +59,8 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
-                    # 创建 ARM64 和 AMD64 的源配置
-          echo "deb http://azure.archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb http://azure.archive.ubuntu.com/ubuntu/ focal-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb http://azure.archive.ubuntu.com/ubuntu/ focal-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb http://azure.archive.ubuntu.com/ubuntu/ focal-backports main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb http://azure.ports.ubuntu.com/ubuntu-ports/ focal main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb http://azure.ports.ubuntu.com/ubuntu-ports/ focal-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb http://azure.ports.ubuntu.com/ubuntu-ports/ focal-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb http://azure.ports.ubuntu.com/ubuntu-ports/ focal-backports main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          
-          sudo dpkg --add-architecture arm64
           sudo -E apt-get -qq update || true
-          sudo -E apt-get -qq install -y binfmt-support qemu-user-static  kernel-package abootimg fakeroot simg2img img2simg mkbootimg bison libelf-dev flex gcc-aarch64-linux-gnu pkg-config libncurses-dev libssl-dev:native unzip git bc devscripts debhelper openssl libssl-dev:arm64
+          sudo -E apt-get -qq install -y binfmt-support qemu-user-static  kernel-package abootimg fakeroot simg2img img2simg mkbootimg bison libelf-dev flex gcc-aarch64-linux-gnu pkg-config libncurses-dev libssl-dev:native unzip git bc devscripts debhelper openssl
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
           sudo timedatectl set-timezone "$TZ"
