@@ -98,7 +98,7 @@ jobs:
       - name: Patch kernel
         id: patch
         run: |
-          cp config linux/arch/arm64/configs/${{ inputs.device_code }}_defconfig
+          cp config6.12 linux/arch/arm64/configs/${{ inputs.device_code }}_defconfig
           cp patch/*.patch ./linux
           chmod +rw linux/arch/arm64/configs/${{ inputs.device_code }}_defconfig
           cd linux
