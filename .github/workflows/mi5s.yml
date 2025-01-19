@@ -221,7 +221,7 @@ jobs:
           BOOTSIZE=$(((CALC_SIZE + ALIGN) & ~ALIGN)) # 对齐到页边界
           
           # 给 Boot Image 加 1MB 额外空间（1048576 字节）
-          BOOTSIZE_WITH_EXTRA=$((BOOTSIZE + 0))
+          BOOTSIZE_WITH_EXTRA=$((BOOTSIZE + 1048576))
           
           # 更新 bootsize 参数
           sed -i "s|^bootsize = .*|bootsize = 0x$(printf '%x' $BOOTSIZE_WITH_EXTRA)|" bootimg.cfg
