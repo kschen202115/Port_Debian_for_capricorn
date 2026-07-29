@@ -110,6 +110,12 @@ jobs:
           # Adds the alternative TD4722 panel DTB and DRM panel driver.
           git apply 0002-capricorn-td4722-panel-support.patch
 
+          # CONFIG_ARCH_QCOM normally builds every Qualcomm DTB. This image
+          # targets the TD4722 Capricorn variant only.
+          awk '!/^dtb-\$\(CONFIG_ARCH_QCOM\).*+=/ || /msm8996pro-xiaomi-capricorn-td4722\.dtb/' \
+              arch/arm64/boot/dts/qcom/Makefile > arch/arm64/boot/dts/qcom/Makefile.capricorn
+          mv arch/arm64/boot/dts/qcom/Makefile.capricorn arch/arm64/boot/dts/qcom/Makefile
+
           ######################################################################
           # The CJK patches below target the 6.12 kernel series.
           ######################################################################
@@ -136,19 +142,19 @@ jobs:
 
           if [ "${{ inputs.use_clang }}" == "true" ]; then
             make ${{ inputs.device_code }}_defconfig ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1
-            make deb-pkg KDEB_OPTIONS="-d" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1 -j$(nproc)
+            make bindeb-pkg KDEB_OPTIONS="-d" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1 -j$(nproc)
           fi
           if [ "${{ inputs.use_clang }}" == "false" ]; then
             make ${{ inputs.device_code }}_defconfig 
-            make deb-pkg KDEB_OPTIONS="-d" -j$(nproc)
+            make bindeb-pkg KDEB_OPTIONS="-d" -j$(nproc)
           fi
           cd ..
           cp *.deb /workdir
           cp *.deb /rootfs
           cp linux/arch/arm64/boot/Image.gz /workdir
           cp linux/arch/arm64/boot/Image.gz /rootfs/tmp_mkboot/
-          cp linux/arch/arm64/boot/dts/qcom/*${{ inputs.device_code }}*.dtb /rootfs/tmp_mkboot/
-          tar -czf /workdir/dtb.tar.gz linux/arch/arm64/boot/dts/qcom/*${{ inputs.device_code }}*.dtb
+          cp linux/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn-td4722.dtb /rootfs/tmp_mkboot/
+          tar -czf /workdir/dtb.tar.gz linux/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn-td4722.dtb
           find ./ -type f \( ! -name "*.ko" -a ! -name "modules.*" \) -exec rm -f {} \;
           cd linux/
           tar -czf /workdir/modules.tar.gz ./*
@@ -200,8 +206,7 @@ jobs:
           ls
           cp /mnt/chroot/boot/initrd* ./tmp_mkboot/
           cp ./tmp_mkboot/initrd* ./tmp_mkboot/initrd.img
-          cp ./tmp_mkboot/*.dtb ./tmp_mkboot/dtb
-          cat ./tmp_mkboot/Image.gz ./tmp_mkboot/dtb > ./tmp_mkboot/kernel-dtb
+          cat ./tmp_mkboot/Image.gz ./tmp_mkboot/msm8996pro-xiaomi-capricorn-td4722.dtb > ./tmp_mkboot/kernel-dtb
           UUID=$(blkid ./root.img | sed -n 's/.*UUID="\([^"]*\)".*/\1/p')
           # 解包 boot.img
           abootimg -x boot.img
