@@ -10,27 +10,19 @@ index 821146b..15f7834 100644
  dtb-$(CONFIG_ARCH_QCOM)	+= msm8996pro-xiaomi-natrium.dtb
  dtb-$(CONFIG_ARCH_QCOM)	+= msm8996pro-xiaomi-scorpio.dtb
  dtb-$(CONFIG_ARCH_QCOM)	+= msm8998-asus-novago-tp370ql.dtb
-diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn-td4722.dts b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn-td4722.dts
-new file mode 100644
-index 0000000..65e955e
---- /dev/null
-+++ b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn-td4722.dts
-@@ -0,0 +1,11 @@
-+// SPDX-License-Identifier: BSD-3-Clause
-+/*
-+ * Xiaomi Mi 5s variants fitted with the LGD TD4722 DSI panel.
-+ *
-+ * The regular capricorn DTB selects the JDI R63452 panel. The panel cannot
-+ * be detected before the DSI host is initialized, so boot the DTB matching
-+ * the panel fitted to the device.
-+ */
-+
-+#define CAPRICORN_TD4722_PANEL
-+#include "msm8996pro-xiaomi-capricorn.dts"
 diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
-index 61cf232..53686a0 100644
+index 61cf232..5a50c6b 100644
 --- a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
 +++ b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
+@@ -22,7 +22,7 @@ touchscreen@20 {
+ 		compatible = "syna,rmi4-i2c";
+ 		reg = <0x20>;
+ 		interrupt-parent = <&tlmm>;
+-		interrupts = <125 IRQ_TYPE_LEVEL_LOW>;
++		interrupts = <125 IRQ_TYPE_EDGE_FALLING>;
+ 		vdd-supply = <&vdd_3v2_tp>;
+ 		syna,reset-delay-ms = <200>;
+ 		syna,startup-delay-ms = <5>;
 @@ -54,7 +54,11 @@ &mdss_dsi0 {
  	pinctrl-1 = <&mdss_dsi_sleep &mdss_te_sleep>;
  
@@ -43,6 +35,25 @@ index 61cf232..53686a0 100644
  		reg = <0>;
  		reset-gpios = <&tlmm 8 GPIO_ACTIVE_LOW>;
  		backlight = <&pmi8994_wled>;
+@@ -73,6 +77,18 @@ &mdss_dsi0_out {
+ 
+ &pmi8994_wled {
+ 	status = "okay";
++	interrupts = <0x3 0xd8 0x2 IRQ_TYPE_EDGE_RISING>;
++	interrupt-names = "short";
++	qcom,vref-mv = <0x72f8>;
++	qcom,switch-freq-khz = <0x258>;
++	qcom,ovp-mv = <0x733c>;
++	qcom,ilim-ma = <0x3d4>;
++	qcom,boost-duty-ns = <0x1a>;
++	qcom,mod-freq-khz = <0x2580>;
++	qcom,hyb-thres = <0x271>;
++	qcom,sync-dly-us = <0x320>;
++	qcom,fs-curr-ua = <0x4e20>;
++	qcom,cons-sync-write-delay-us = <0x3e8>;
+ };
+ 
+ &mss_pil {
 diff --git a/drivers/gpu/drm/panel/Kconfig b/drivers/gpu/drm/panel/Kconfig
 index eeefeea..a5230a6 100644
 --- a/drivers/gpu/drm/panel/Kconfig
@@ -295,3 +306,20 @@ index 0000000..c3862aa
 +
 +MODULE_DESCRIPTION("DRM driver for LGD TD4722 DSI panel");
 +MODULE_LICENSE("GPL");
+diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn-td4722.dts b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn-td4722.dts
+new file mode 100644
+index 0000000..65e955e
+--- /dev/null
++++ b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn-td4722.dts
+@@ -0,0 +1,11 @@
++// SPDX-License-Identifier: BSD-3-Clause
++/*
++ * Xiaomi Mi 5s variants fitted with the LGD TD4722 DSI panel.
++ *
++ * The regular capricorn DTB selects the JDI R63452 panel. The panel cannot
++ * be detected before the DSI host is initialized, so boot the DTB matching
++ * the panel fitted to the device.
++ */
++
++#define CAPRICORN_TD4722_PANEL
++#include "msm8996pro-xiaomi-capricorn.dts"
