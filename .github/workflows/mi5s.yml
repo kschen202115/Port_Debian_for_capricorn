@@ -10,15 +10,15 @@ on:
       kernel_branch:
         description: "Kernel branch"
         required: true
-        default: "v6.12.1-msm8996"
+        default: "msm8996-stable-6.19.y"
       device_code:
         description: "Device codename"
         required: true
         default: "capricorn"
       apply_cjktty_patch:
-        description: "Apply patch"
+        description: "Apply 6.12 CJK patch"
         required: true
-        default: "true"
+        default: "false"
         type: choice
         options:
           - "true"
@@ -106,8 +106,12 @@ jobs:
           export ARCH=arm64
           make clean
           make mrproper
+
+          # Adds the alternative TD4722 panel DTB and DRM panel driver.
+          git apply 0002-capricorn-td4722-panel-support.patch
+
           ######################################################################
-          #cjk补丁可以去https://github.com/zhmars/cjktty-patches找支持到6.9，6.9，6.8的补丁在pull里#
+          # The CJK patches below target the 6.12 kernel series.
           ######################################################################
           if [ "${{ inputs.apply_cjktty_patch }}" == "true" ]; then
             wget https://raw.githubusercontent.com/zhmars/cjktty-patches/refs/heads/master/cjktty-add-cjk32x32-font-data.patch

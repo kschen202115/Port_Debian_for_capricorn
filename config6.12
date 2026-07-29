@@ -8192,3 +8192,8 @@ CONFIG_MEMTEST=y
 #
 # end of Rust hacking
 # end of Kernel hacking
+
+# Xiaomi Mi 5s (capricorn) panel variants. Keep both built in so the selected
+# DTB can initialize the panel before the root filesystem is mounted.
+CONFIG_DRM_PANEL_JDI_R63452=y
+CONFIG_DRM_PANEL_LGD_TD4722=y
