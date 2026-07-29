@@ -71,7 +71,7 @@ jobs:
           # 添加 ARM64 架构支持
           sudo dpkg --add-architecture arm64
           sudo -E apt-get -qq update || true
-          sudo -E apt-get -qq install -y binfmt-support qemu-user-static kernel-package abootimg fakeroot simg2img img2simg mkbootimg bison flex gcc-aarch64-linux-gnu pkg-config libelf-dev libncurses-dev libssl-dev:native libssl-dev:arm64 pahole rsync xz-utils zstd unzip git bc devscripts debhelper openssl
+          sudo -E apt-get -qq install -y binfmt-support qemu-user-static abootimg fakeroot simg2img img2simg mkbootimg bison flex gcc-aarch64-linux-gnu pkg-config libelf-dev libncurses-dev libssl-dev:native libssl-dev:arm64 pahole rsync xz-utils zstd unzip git bc devscripts debhelper openssl
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
           sudo timedatectl set-timezone "$TZ"
