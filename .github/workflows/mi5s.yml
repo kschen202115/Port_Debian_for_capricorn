@@ -10,13 +10,13 @@ on:
       kernel_branch:
         description: "Kernel branch"
         required: true
-        default: "v6.12.1-msm8996"
+        default: "msm8996-stable-6.19.y"
       device_code:
         description: "Device codename"
         required: true
         default: "capricorn"
       apply_cjktty_patch:
-        description: "Apply patch"
+        description: "Apply CJKTTY 6.19 patches"
         required: true
         default: "true"
         type: choice
@@ -48,7 +48,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
@@ -59,19 +59,19 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          echo "deb [arch=amd64] http://azure.archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse" | sudo tee /etc/apt/sources.list
-          echo "deb [arch=amd64] http://azure.archive.ubuntu.com/ubuntu/ focal-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb [arch=amd64] http://azure.archive.ubuntu.com/ubuntu/ focal-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb [arch=amd64] http://azure.archive.ubuntu.com/ubuntu/ focal-backports main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb [arch=arm64] http://azure.ports.ubuntu.com/ubuntu-ports/ focal main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb [arch=arm64] http://azure.ports.ubuntu.com/ubuntu-ports/ focal-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb [arch=arm64] http://azure.ports.ubuntu.com/ubuntu-ports/ focal-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-          echo "deb [arch=arm64] http://azure.ports.ubuntu.com/ubuntu-ports/ focal-backports main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ jammy main restricted universe multiverse" | sudo tee /etc/apt/sources.list
+          echo "deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=amd64] http://security.ubuntu.com/ubuntu/ jammy-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ jammy-backports main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-backports main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
 
           # 添加 ARM64 架构支持
           sudo dpkg --add-architecture arm64
           sudo -E apt-get -qq update || true
-          sudo -E apt-get -qq install -y binfmt-support qemu-user-static  kernel-package abootimg fakeroot simg2img img2simg mkbootimg bison libelf-dev flex gcc-aarch64-linux-gnu pkg-config libncurses-dev libssl-dev:native unzip git bc devscripts debhelper openssl libssl-dev:arm64
+          sudo -E apt-get -qq install -y binfmt-support qemu-user-static abootimg fakeroot simg2img img2simg mkbootimg bison flex gcc-aarch64-linux-gnu pkg-config libdw-dev:native libelf-dev libncurses-dev libssl-dev:native libssl-dev:arm64 pahole rsync xz-utils zstd unzip git bc devscripts debhelper openssl
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
           sudo timedatectl set-timezone "$TZ"
@@ -106,14 +106,19 @@ jobs:
           export ARCH=arm64
           make clean
           make mrproper
-          ######################################################################
-          #cjk补丁可以去https://github.com/zhmars/cjktty-patches找支持到6.9，6.9，6.8的补丁在pull里#
-          ######################################################################
+
+          # Adds the alternative TD4722 panel DTB and DRM panel driver.
+          git apply 0002-capricorn-td4722-panel-support.patch
+
+          # CONFIG_ARCH_QCOM normally builds every Qualcomm DTB. This image
+          # targets the TD4722 Capricorn variant only.
+          awk '!/^dtb-\$\(CONFIG_ARCH_QCOM\).*+=/ || /msm8996pro-xiaomi-capricorn-td4722\.dtb/' \
+              arch/arm64/boot/dts/qcom/Makefile > arch/arm64/boot/dts/qcom/Makefile.capricorn
+          mv arch/arm64/boot/dts/qcom/Makefile.capricorn arch/arm64/boot/dts/qcom/Makefile
+
+          # CJKTTY 6.19 patches are bundled in this repository's patch/ directory.
           if [ "${{ inputs.apply_cjktty_patch }}" == "true" ]; then
-            wget https://raw.githubusercontent.com/zhmars/cjktty-patches/refs/heads/master/cjktty-add-cjk32x32-font-data.patch
-            #wget https://raw.githubusercontent.com/kschen202115/Armbian-build/refs/heads/main/cjktty-6.9.patch
-            git apply 0001-patch-mi5s.patch
-            git apply 0001-cjktty-6.12.1.patch
+            git apply cjktty-6.19.patch
             git apply cjktty-add-cjk32x32-font-data.patch
           fi
           git add .
@@ -124,26 +129,27 @@ jobs:
           cd linux
           export PATH=/usr/lib/llvm-19/bin:$PATH
           export CROSS_COMPILE=aarch64-linux-gnu-
+          export CLANG_TRIPLE=aarch64-linux-gnu-
           export ARCH=arm64
           #export DEB_BUILD_OPTIONS="-d"
           export KDEB_OPTIONS="-d"
           #跳过依赖检验，对于6.12内核源码
 
           if [ "${{ inputs.use_clang }}" == "true" ]; then
-            make ${{ inputs.device_code }}_defconfig ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1
-            make deb-pkg KDEB_OPTIONS="-d" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1 -j$(nproc)
+            make ${{ inputs.device_code }}_defconfig ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1
+            make bindeb-pkg KDEB_OPTIONS="-d" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1 -j$(nproc)
           fi
           if [ "${{ inputs.use_clang }}" == "false" ]; then
             make ${{ inputs.device_code }}_defconfig 
-            make deb-pkg KDEB_OPTIONS="-d" -j$(nproc)
+            make bindeb-pkg KDEB_OPTIONS="-d" -j$(nproc)
           fi
           cd ..
           cp *.deb /workdir
           cp *.deb /rootfs
           cp linux/arch/arm64/boot/Image.gz /workdir
           cp linux/arch/arm64/boot/Image.gz /rootfs/tmp_mkboot/
-          cp linux/arch/arm64/boot/dts/qcom/*${{ inputs.device_code }}*.dtb /rootfs/tmp_mkboot/
-          tar -czf /workdir/dtb.tar.gz linux/arch/arm64/boot/dts/qcom/*${{ inputs.device_code }}*.dtb
+          cp linux/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn-td4722.dtb /rootfs/tmp_mkboot/
+          tar -czf /workdir/dtb.tar.gz linux/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn-td4722.dtb
           find ./ -type f \( ! -name "*.ko" -a ! -name "modules.*" \) -exec rm -f {} \;
           cd linux/
           tar -czf /workdir/modules.tar.gz ./*
@@ -195,8 +201,7 @@ jobs:
           ls
           cp /mnt/chroot/boot/initrd* ./tmp_mkboot/
           cp ./tmp_mkboot/initrd* ./tmp_mkboot/initrd.img
-          cp ./tmp_mkboot/*.dtb ./tmp_mkboot/dtb
-          cat ./tmp_mkboot/Image.gz ./tmp_mkboot/dtb > ./tmp_mkboot/kernel-dtb
+          cat ./tmp_mkboot/Image.gz ./tmp_mkboot/msm8996pro-xiaomi-capricorn-td4722.dtb > ./tmp_mkboot/kernel-dtb
           UUID=$(blkid ./root.img | sed -n 's/.*UUID="\([^"]*\)".*/\1/p')
           # 解包 boot.img
           abootimg -x boot.img
@@ -235,13 +240,19 @@ jobs:
           zip root.zip rootfs.img
           cp root.zip /workdir/
           # cp ./tmp_mkboot/boot.img /workdir/
+      - name: Set release tag
+        id: release_tag
+        if: steps.compile.outputs.status == 'success' && !cancelled()
+        run: |
+          echo "tag=debian_for_${{ inputs.device_code }}_$(date +'%Y%m%d-%H%M%S')" >> "$GITHUB_OUTPUT"
       - name: Upload image to Release
         uses: ncipollo/release-action@main
         if: steps.compile.outputs.status == 'success' && !cancelled()
         with:
-          tag: debian_for_mi5s
+          tag: ${{ steps.release_tag.outputs.tag }}
+          name: ${{ steps.release_tag.outputs.tag }}
           artifacts: /workdir/*
-          allowUpdates: true
+          allowUpdates: false
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
             This is boot.img and rootfs.img(in the root.zip) for ${{ inputs.device_code }}

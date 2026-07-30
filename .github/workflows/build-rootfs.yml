@@ -1,0 +1,191 @@
+name: Build ARM64 Debian RootFS
+
+on:
+  workflow_dispatch:
+
+env:
+  MNT: /mnt/rootfs
+  USERNAME: kschen
+  APT_MIRROR: mirrors.ustc.edu.cn
+  # 镜像大小。首次启动会自动 resize2fs 扩到分区实际大小，这里只要够装完包
+  IMG_SIZE: 2G
+  # 系统 locale。tty 下显示中文需要 fbterm 之类的用户态终端，
+  # 内核 VT 字体表上限 512 字形，装不下 CJK，改这里也不会让 tty 出中文
+  LOCALE: en_US.UTF-8
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装依赖
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          # img2simg 不是包名，由 android-sdk-libsparse-utils 提供
+          sudo apt-get install -y --no-install-recommends \
+            debootstrap qemu-user-static binfmt-support \
+            qemu-utils android-sdk-libsparse-utils e2fsprogs zip
+
+      - name: 确认 aarch64 binfmt 已注册
+        run: |
+          set -euxo pipefail
+          # 不通的话 --second-stage 一定挂，早失败早排查
+          update-binfmts --display qemu-aarch64
+          test -x /usr/bin/qemu-aarch64-static
+
+      # 整个构建放在同一个 step，trap 才能保证无论成败都正确卸载。
+      # 分散在多个 step 且从不 umount 会导致在挂载状态下打包，镜像随机损坏。
+      - name: 构建并配置 rootfs
+        run: |
+          set -euxo pipefail
+
+          # 自动跟随当前 stable，不锁版本。一次 curl 同时取代号和点版本号
+          curl -fsSL https://deb.debian.org/debian/dists/stable/Release -o /tmp/Release
+          SUITE=$(grep -oP '^Codename:\s+\K\S+' /tmp/Release)
+          DEBVER=$(grep -oP '^Version:\s+\K\S+' /tmp/Release || echo unknown)
+          # 时间戳用东八区，UTC 的日期跟本地构建时间会差一天
+          STAMP=$(TZ=Asia/Shanghai date +%Y%m%d-%H%M)
+
+          if [ -z "${SUITE:-}" ]; then
+            echo "::error::未能从 dists/stable/Release 解析出 Codename"
+            exit 1
+          fi
+          echo "::notice::Debian ${DEBVER} (${SUITE})，构建于 ${STAMP} CST"
+
+          # 导出给后续 step（$GITHUB_ENV 只对后续 step 生效，本 step 内仍用局部变量）
+          {
+            echo "SUITE=${SUITE}"
+            echo "DEBVER=${DEBVER}"
+            echo "BUILD_STAMP=${STAMP}"
+            echo "RELEASE_TAG=rootfs-${SUITE}-${DEBVER}-${STAMP}"
+            echo "ARTIFACT=rootfs-${SUITE}-${DEBVER}-${STAMP}.zip"
+          } >> "$GITHUB_ENV"
+
+          qemu-img create -f raw root.img "$IMG_SIZE"
+          mkfs.ext4 -F -L debian-rootfs root.img
+
+          sudo mkdir -p "$MNT"
+          sudo mount -o loop root.img "$MNT"
+
+          cleanup() {
+            local rc=$?
+            set +e
+            echo "=== 清理：卸载 $MNT ==="
+            sudo rm -f "$MNT/usr/bin/qemu-aarch64-static"
+            sudo umount -R "$MNT" 2>/dev/null
+            if mountpoint -q "$MNT"; then
+              sleep 2
+              sudo fuser -km "$MNT" 2>/dev/null
+              sudo umount -R "$MNT"
+            fi
+            sudo sync
+            return $rc
+          }
+          trap cleanup EXIT
+
+          echo "=== debootstrap 第一阶段 ==="
+          sudo debootstrap --arch=arm64 --foreign --verbose \
+            "$SUITE" "$MNT" http://deb.debian.org/debian/
+
+          sudo cp /usr/bin/qemu-aarch64-static "$MNT/usr/bin/"
+
+          # 顺序有讲究：dev 必须在 dev/pts 之前
+          for d in proc sys dev dev/pts; do
+            sudo mount --bind "/$d" "$MNT/$d"
+          done
+
+          echo "=== debootstrap 第二阶段 ==="
+          sudo chroot "$MNT" /debootstrap/debootstrap --second-stage --verbose
+
+          echo "=== 铺覆盖层 ==="
+          # overlay/ 直接镜像目标文件系统布局，workflow 里不再有 heredoc 生成文件
+          sudo cp -a overlay/. "$MNT/"
+
+          # 预编译二进制：hkdm / buffyboard
+          [ -d usr/bin ] && sudo cp -a usr/bin/. "$MNT/usr/bin/"
+
+          # hkdm 配置
+          if [ -d eg/hkdm ]; then
+            sudo mkdir -p "$MNT/etc/hkdm"
+            sudo cp -a eg/hkdm/. "$MNT/etc/hkdm/"
+          fi
+
+          # 固件和内核模块不在这里处理——本流程只产底包，
+          # 设备相关内容由本地的 mount_rootfs.sh / chroot_install_kernel.sh 注入
+
+          echo "=== chroot 内配置 ==="
+          sudo cp scripts/configure-rootfs.sh "$MNT/tmp/"
+          sudo chroot "$MNT" env \
+            USERNAME="$USERNAME" \
+            LOCALE="$LOCALE" \
+            APT_MIRROR="$APT_MIRROR" \
+            USER_PASSWORD="${{ secrets.ROOTFS_PASSWORD || '1' }}" \
+            /bin/bash /tmp/configure-rootfs.sh
+          sudo rm -f "$MNT/tmp/configure-rootfs.sh"
+
+          echo "=== 占用情况 ==="
+          df -h "$MNT"
+
+      - name: 转 sparse 镜像
+        run: |
+          set -euxo pipefail
+          # 上一步 trap 已卸载，这里断言一次，绝不在挂载状态下打包
+          if mountpoint -q "$MNT"; then
+            echo "::error::镜像仍处于挂载状态，拒绝打包"
+            exit 1
+          fi
+          e2fsck -f -y root.img || true
+          img2simg root.img rootfs.img
+          zip -9 "$ARTIFACT" rootfs.img
+          ls -lh root.img rootfs.img "$ARTIFACT"
+
+      - name: 发布版本化 Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ env.RELEASE_TAG }}
+          name: Debian ${{ env.DEBVER }} (${{ env.SUITE }}) — ${{ env.BUILD_STAMP }}
+          artifacts: ${{ env.ARTIFACT }}
+          allowUpdates: true
+          makeLatest: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            ARM64 Debian 底包（rootfs）。固件与内核模块需用本地脚本注入。
+
+            | | |
+            |---|---|
+            | Debian | ${{ env.DEBVER }} (${{ env.SUITE }}) |
+            | 构建时间 | ${{ env.BUILD_STAMP }} CST |
+            | Locale | ${{ env.LOCALE }} |
+            | 提交 | ${{ github.sha }} |
+
+            - 用户名 `kschen`，tty1 自动登录
+            - 密码来自仓库 secret `ROOTFS_PASSWORD`，未设置时为 `1`
+            - 首次启动自动扩容根文件系统，无需手动 resize2fs
+
+      # 固定入口：URL 永不变，方便脚本/书签直链。
+      # removeArtifacts 必须开——产物名带版本号，不清旧的会越堆越多。
+      # makeLatest 设 false，让上面那个带版本的 Release 保住 Latest 徽章。
+      - name: 更新 latest 固定入口
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ARM64_Debian_RootFS
+          name: Latest — Debian ${{ env.DEBVER }} (${{ env.SUITE }})
+          artifacts: ${{ env.ARTIFACT }}
+          allowUpdates: true
+          removeArtifacts: true
+          makeLatest: false
+          commit: ${{ github.sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            **最新构建的固定下载入口**，内容随每次构建更新。
+
+            | | |
+            |---|---|
+            | Debian | ${{ env.DEBVER }} (${{ env.SUITE }}) |
+            | 构建时间 | ${{ env.BUILD_STAMP }} CST |
+            | 对应版本化 Release | `${{ env.RELEASE_TAG }}` |
+
+            需要固定某个历史版本请到 Releases 列表取带版本号的 tag。
