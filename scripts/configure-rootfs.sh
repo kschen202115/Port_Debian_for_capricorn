@@ -24,7 +24,8 @@ apt-get install -y --no-install-recommends \
     systemd-timesyncd \
     htop kmod usbutils fdisk \
     make git \
-    libevdev-dev
+    libevdev-dev \
+    initramfs-tools
 
 echo "=============== locale ($LOCALE) ==============="
 # locale.gen 里的格式是 "# en_US.UTF-8 UTF-8"，把目标行取消注释
