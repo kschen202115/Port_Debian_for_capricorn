@@ -16,9 +16,9 @@ on:
         required: true
         default: "capricorn"
       apply_cjktty_patch:
-        description: "Apply 6.12 CJK patch"
+        description: "Apply CJKTTY 6.19 patches"
         required: true
-        default: "false"
+        default: "true"
         type: choice
         options:
           - "true"
@@ -116,14 +116,16 @@ jobs:
               arch/arm64/boot/dts/qcom/Makefile > arch/arm64/boot/dts/qcom/Makefile.capricorn
           mv arch/arm64/boot/dts/qcom/Makefile.capricorn arch/arm64/boot/dts/qcom/Makefile
 
-          ######################################################################
-          # The CJK patches below target the 6.12 kernel series.
-          ######################################################################
+          # CJKTTY 6.19 requires both the console patch and its 32x32 font.
+          # Keep the source revision pinned for reproducible builds.
           if [ "${{ inputs.apply_cjktty_patch }}" == "true" ]; then
-            wget https://raw.githubusercontent.com/zhmars/cjktty-patches/refs/heads/master/cjktty-add-cjk32x32-font-data.patch
-            #wget https://raw.githubusercontent.com/kschen202115/Armbian-build/refs/heads/main/cjktty-6.9.patch
-            git apply 0001-patch-mi5s.patch
-            git apply 0001-cjktty-6.12.1.patch
+            cjktty_commit=4f33f9f1beb5c8eae7d4d32fec06da67f1293470
+            cjktty_base_url="https://raw.githubusercontent.com/whitehara/kernel-patch-fedora/${cjktty_commit}/6.19"
+            curl --fail --location --retry 3 --output cjktty-6.19.patch \
+              "${cjktty_base_url}/cjktty-6.19.patch"
+            curl --fail --location --retry 3 --output cjktty-add-cjk32x32-font-data.patch \
+              "${cjktty_base_url}/cjktty-add-cjk32x32-font-data.patch"
+            git apply cjktty-6.19.patch
             git apply cjktty-add-cjk32x32-font-data.patch
           fi
           git add .
@@ -245,13 +247,19 @@ jobs:
           zip root.zip rootfs.img
           cp root.zip /workdir/
           # cp ./tmp_mkboot/boot.img /workdir/
+      - name: Set release tag
+        id: release_tag
+        if: steps.compile.outputs.status == 'success' && !cancelled()
+        run: |
+          echo "tag=debian_for_${{ inputs.device_code }}_$(date +'%Y%m%d-%H%M%S')" >> "$GITHUB_OUTPUT"
       - name: Upload image to Release
         uses: ncipollo/release-action@main
         if: steps.compile.outputs.status == 'success' && !cancelled()
         with:
-          tag: debian_for_mi5s
+          tag: ${{ steps.release_tag.outputs.tag }}
+          name: ${{ steps.release_tag.outputs.tag }}
           artifacts: /workdir/*
-          allowUpdates: true
+          allowUpdates: false
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
             This is boot.img and rootfs.img(in the root.zip) for ${{ inputs.device_code }}
