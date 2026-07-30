@@ -162,7 +162,7 @@ jobs:
           ###########################################################
           #如果需要使用自定义rootfs，请替换下面链接，并修改对应代码
           #rootfs链接
-          wget ${{ inputs.rootfs_url }}
+          wget -O root.zip "${{ inputs.rootfs_url }}"
           #解压并清除
           unzip root.zip
           sudo rm -rf root.zip
