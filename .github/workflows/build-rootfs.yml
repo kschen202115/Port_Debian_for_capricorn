@@ -29,11 +29,21 @@ jobs:
             debootstrap qemu-user-static binfmt-support \
             qemu-utils android-sdk-libsparse-utils e2fsprogs zip
 
-      - name: 确认 aarch64 binfmt 已注册
+      - name: 确认 aarch64 binfmt 可用
         run: |
           set -euxo pipefail
-          # 不通的话 --second-stage 一定挂，早失败早排查
-          update-binfmts --display qemu-aarch64
+          # 真实来源是内核的 binfmt_misc，不是 binfmt-support 的 /var/lib/binfmts
+          # 数据库。runner 镜像的 handler 由 Docker 那套直接注册进内核，
+          # update-binfmts --display 看不到它 —— 别用那个命令判断。
+          ls -l /proc/sys/fs/binfmt_misc/ || true
+
+          if ! ls /proc/sys/fs/binfmt_misc/ 2>/dev/null | grep -q aarch64; then
+            echo "内核中没有 aarch64 handler，注册一次"
+            docker run --rm --privileged tonistiigi/binfmt --install arm64
+          fi
+
+          # 到这里必须能看到，否则 --second-stage 一定挂，早失败早排查
+          ls /proc/sys/fs/binfmt_misc/ | grep aarch64
           test -x /usr/bin/qemu-aarch64-static
 
       # 整个构建放在同一个 step，trap 才能保证无论成败都正确卸载。
