@@ -116,15 +116,8 @@ jobs:
               arch/arm64/boot/dts/qcom/Makefile > arch/arm64/boot/dts/qcom/Makefile.capricorn
           mv arch/arm64/boot/dts/qcom/Makefile.capricorn arch/arm64/boot/dts/qcom/Makefile
 
-          # CJKTTY 6.19 requires both the console patch and its 32x32 font.
-          # Keep the source revision pinned for reproducible builds.
+          # CJKTTY 6.19 patches are bundled in this repository's patch/ directory.
           if [ "${{ inputs.apply_cjktty_patch }}" == "true" ]; then
-            cjktty_commit=4f33f9f1beb5c8eae7d4d32fec06da67f1293470
-            cjktty_base_url="https://raw.githubusercontent.com/whitehara/kernel-patch-fedora/${cjktty_commit}/6.19"
-            curl --fail --location --retry 3 --output cjktty-6.19.patch \
-              "${cjktty_base_url}/cjktty-6.19.patch"
-            curl --fail --location --retry 3 --output cjktty-add-cjk32x32-font-data.patch \
-              "${cjktty_base_url}/cjktty-add-cjk32x32-font-data.patch"
             git apply cjktty-6.19.patch
             git apply cjktty-add-cjk32x32-font-data.patch
           fi
