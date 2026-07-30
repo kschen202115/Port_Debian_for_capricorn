@@ -1,0 +1,31 @@
+#!/bin/sh
+# 把根文件系统在线扩容到所在分区的实际大小。
+#
+# 原来用的是 `systemctl add-wants local-fs.target systemd-growfs-root.service`，
+# 但 systemd-growfs-root.service 不是一个可依赖的静态单元 —— 它由
+# systemd-fstab-generator 在检测到 fstab 里的 x-systemd.growfs 选项时动态生成。
+# 这个镜像刻意没有 fstab，所以那个单元根本不存在，add-wants 会失败，
+# 在 set -e 下直接把构建搞挂。
+#
+# 改用 resize2fs：e2fsprogs 在基础系统里，ext4 支持挂载状态下在线扩容，
+# 且幂等 —— 已经是满大小时只打印 "Nothing to do!" 然后正常退出。
+set -eu
+
+DEV="$(findmnt -no SOURCE /)"
+
+if [ -z "$DEV" ]; then
+    echo "grow-rootfs: 无法确定根设备" >&2
+    exit 1
+fi
+
+# findmnt 对 overlay/btrfs 之类会返回带 [subvol] 后缀的东西，这里只处理块设备
+case "$DEV" in
+    /dev/*) : ;;
+    *)
+        echo "grow-rootfs: 根设备 '$DEV' 不是块设备，跳过"
+        exit 0
+        ;;
+esac
+
+echo "grow-rootfs: 对 $DEV 执行在线扩容"
+resize2fs "$DEV"

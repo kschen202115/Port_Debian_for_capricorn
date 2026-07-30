@@ -115,26 +115,11 @@ jobs:
           echo "=== debootstrap 第二阶段 ==="
           sudo chroot "$MNT" /debootstrap/debootstrap --second-stage --verbose
 
-          # ---------------------------------------------------------------
-          # 拷贝顺序：预编译二进制先，overlay 后。
-          # 反过来会让 usr/bin/ 里的同名文件盖掉 overlay 的版本 —— 之前
-          # usr/bin/power.sh 就是这样把 overlay/usr/bin/power.sh 覆盖掉的。
-          # overlay/ 是配置的唯一权威来源，必须最后落盘。
-          # ---------------------------------------------------------------
-          echo "=== 铺预编译二进制 ==="
-          if [ -d usr/bin ]; then
-            sudo cp -a usr/bin/. "$MNT/usr/bin/"
-          fi
 
           echo "=== 铺覆盖层（最后拷，优先级最高）==="
           # overlay/ 直接镜像目标文件系统布局，workflow 里不再有 heredoc 生成文件
           sudo cp -a overlay/. "$MNT/"
 
-          # hkdm 配置
-          if [ -d eg/hkdm ]; then
-            sudo mkdir -p "$MNT/etc/hkdm"
-            sudo cp -a eg/hkdm/. "$MNT/etc/hkdm/"
-          fi
 
           # 固件和内核模块不在这里处理——本流程只产底包，
           # 设备相关内容由本地的 mount_rootfs.sh / chroot_install_kernel.sh 注入

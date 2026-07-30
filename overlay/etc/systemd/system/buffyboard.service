@@ -1,0 +1,19 @@
+[Unit]
+Description=buffyboard on-screen keyboard
+# 按需启停，由 /usr/bin/power.sh kb（音量下键，经 hkdm）触发。
+# 刻意不 enable：不需要开机自启。
+#
+# 存在的意义是把生命周期从 hkdm 里摘出来。原来 power.sh 用
+# `sudo buffyboard &` 起进程，它作为 power.sh 的子进程落在 hkdm.service
+# 的 cgroup 里，hkdm 一重启就被 KillMode=control-group 连带杀掉。
+ConditionPathExists=/usr/bin/buffyboard
+# 需要 uinput 注入按键，模块由 /etc/modules-load.d/uinput.conf 加载
+ConditionPathExists=/dev/uinput
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/buffyboard
+Restart=on-failure
+RestartSec=2
+# 它直接画 framebuffer 并读 evdev，必须是 root
+User=root
