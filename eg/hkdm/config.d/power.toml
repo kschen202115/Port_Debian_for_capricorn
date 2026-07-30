@@ -1,22 +1,18 @@
 [[events]]
-# Name of the event (optional)
+# 事件名（可选）
 name = "kb"
-# The type of the event
 event_type = "EV_KEY"
-# Only valid for EV_KEY events, should the command be fired on a press or release?
+# 只对 EV_KEY 有效：命令在按下还是松开时触发
 key_state = "released"
-# The ordering of the keys here matters, all but the last key are treated like
-# "modifier" keys, the command will only be run if they are pressed.
-# The last key is the "action" key, the command will fire when it matches
-# keys_state. In this case holding the volume down button and releasing 
-# the power button will cause the command to be run
 keys = ["KEY_VOLUMEDOWN"]
 command = "/usr/bin/power.sh kb"
+
 [[events]]
 name = "power"
 event_type = "EV_KEY"
-# And here, releasing it causes the command to be run
+# 松开电源键 -> 切换屏幕亮度。
+# 长按关机由 logind 处理（见 /etc/systemd/logind.conf.d/10-powerkey.conf
+# 里的 HandlePowerKeyLongPress=poweroff），两者不冲突：evdev 允许多个读者。
 key_state = "released"
 keys = ["KEY_POWER"]
 command = "/usr/bin/power.sh power"
-

@@ -10,13 +10,14 @@ env:
   # 镜像大小。首次启动会自动 resize2fs 扩到分区实际大小，这里只要够装完包
   IMG_SIZE: 2G
   # 系统 locale。tty 下显示中文需要 fbterm 之类的用户态终端，
-  # 内核 VT 字体表上限 512 字形，装不下 CJK，改这里也不会让 tty 出中文
+  # 内核 VT 字体表上限 512 字形，装不下 CJK，改这里也不会让 tty 出中文。
+  # zh_CN.UTF-8 也会一并生成，用户可自行 update-locale 切换
   LOCALE: en_US.UTF-8
+  EXTRA_LOCALE: zh_CN.UTF-8
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -36,14 +37,20 @@ jobs:
           # 数据库。runner 镜像的 handler 由 Docker 那套直接注册进内核，
           # update-binfmts --display 看不到它 —— 别用那个命令判断。
           ls -l /proc/sys/fs/binfmt_misc/ || true
-
-          if ! ls /proc/sys/fs/binfmt_misc/ 2>/dev/null | grep -q aarch64; then
+          # 用 glob 判断而不是 ls | grep
+          shopt -s nullglob
+          handlers=(/proc/sys/fs/binfmt_misc/*aarch64*)
+          if [ ${#handlers[@]} -eq 0 ]; then
             echo "内核中没有 aarch64 handler，注册一次"
             docker run --rm --privileged tonistiigi/binfmt --install arm64
+            handlers=(/proc/sys/fs/binfmt_misc/*aarch64*)
           fi
-
           # 到这里必须能看到，否则 --second-stage 一定挂，早失败早排查
-          ls /proc/sys/fs/binfmt_misc/ | grep aarch64
+          if [ ${#handlers[@]} -eq 0 ]; then
+            echo "::error::注册后仍然没有 aarch64 binfmt handler"
+            exit 1
+          fi
+          printf '找到 handler: %s\n' "${handlers[@]}"
           test -x /usr/bin/qemu-aarch64-static
 
       # 整个构建放在同一个 step，trap 才能保证无论成败都正确卸载。
@@ -76,7 +83,6 @@ jobs:
 
           qemu-img create -f raw root.img "$IMG_SIZE"
           mkfs.ext4 -F -L debian-rootfs root.img
-
           sudo mkdir -p "$MNT"
           sudo mount -o loop root.img "$MNT"
 
@@ -99,7 +105,6 @@ jobs:
           echo "=== debootstrap 第一阶段 ==="
           sudo debootstrap --arch=arm64 --foreign --verbose \
             "$SUITE" "$MNT" http://deb.debian.org/debian/
-
           sudo cp /usr/bin/qemu-aarch64-static "$MNT/usr/bin/"
 
           # 顺序有讲究：dev 必须在 dev/pts 之前
@@ -110,12 +115,20 @@ jobs:
           echo "=== debootstrap 第二阶段 ==="
           sudo chroot "$MNT" /debootstrap/debootstrap --second-stage --verbose
 
-          echo "=== 铺覆盖层 ==="
+          # ---------------------------------------------------------------
+          # 拷贝顺序：预编译二进制先，overlay 后。
+          # 反过来会让 usr/bin/ 里的同名文件盖掉 overlay 的版本 —— 之前
+          # usr/bin/power.sh 就是这样把 overlay/usr/bin/power.sh 覆盖掉的。
+          # overlay/ 是配置的唯一权威来源，必须最后落盘。
+          # ---------------------------------------------------------------
+          echo "=== 铺预编译二进制 ==="
+          if [ -d usr/bin ]; then
+            sudo cp -a usr/bin/. "$MNT/usr/bin/"
+          fi
+
+          echo "=== 铺覆盖层（最后拷，优先级最高）==="
           # overlay/ 直接镜像目标文件系统布局，workflow 里不再有 heredoc 生成文件
           sudo cp -a overlay/. "$MNT/"
-
-          # 预编译二进制：hkdm / buffyboard
-          [ -d usr/bin ] && sudo cp -a usr/bin/. "$MNT/usr/bin/"
 
           # hkdm 配置
           if [ -d eg/hkdm ]; then
@@ -126,15 +139,62 @@ jobs:
           # 固件和内核模块不在这里处理——本流程只产底包，
           # 设备相关内容由本地的 mount_rootfs.sh / chroot_install_kernel.sh 注入
 
+          echo "=== 断言 overlay 版本没被覆盖 ==="
+          # power.sh 的重写版第一行注释里带这个标记，用它确认落盘的是新版
+          if ! sudo grep -q 'hkdm 触发' "$MNT/usr/bin/power.sh"; then
+            echo "::error::/usr/bin/power.sh 不是 overlay 里的重写版，检查拷贝顺序"
+            exit 1
+          fi
+
           echo "=== chroot 内配置 ==="
           sudo cp scripts/configure-rootfs.sh "$MNT/tmp/"
           sudo chroot "$MNT" env \
             USERNAME="$USERNAME" \
             LOCALE="$LOCALE" \
+            EXTRA_LOCALE="$EXTRA_LOCALE" \
             APT_MIRROR="$APT_MIRROR" \
             USER_PASSWORD="${{ secrets.ROOTFS_PASSWORD || '1' }}" \
             /bin/bash /tmp/configure-rootfs.sh
           sudo rm -f "$MNT/tmp/configure-rootfs.sh"
+
+          echo "=== 产物完整性断言 ==="
+          # 缺文件时 systemd unit 仍会 enable 成功，只在开机时静默失败。
+          # 在这里挡住，别让坏镜像发出去。
+          for f in /usr/bin/power.sh /usr/bin/hkdm /usr/bin/buffyboard \
+                   /usr/local/sbin/grow-rootfs \
+                   /etc/hkdm/config.d/power.toml \
+                   /etc/systemd/system/hkdm.service \
+                   /etc/systemd/system/buffyboard.service \
+                   /etc/systemd/system/grow-rootfs.service \
+                   /etc/systemd/system/serial-getty@ttyGS0.service.d/autologin.conf \
+                   /etc/systemd/system/getty@tty1.service.d/override.conf \
+                   /etc/systemd/logind.conf.d/10-powerkey.conf \
+                   /etc/modules-load.d/uinput.conf; do
+            if [ ! -e "$MNT$f" ]; then
+              echo "::error::$f 不在镜像里"
+              exit 1
+            fi
+          done
+
+          echo "=== 动态库检查 ==="
+          # 预编译的 hkdm / buffyboard 一旦缺 so，开机就是静默失败。
+          # buffyboard 链接 libinput + xkbcommon，hkdm 链接 libevdev。
+          rc=0
+          for b in hkdm buffyboard; do
+            echo "--- $b ---"
+            # 重定向由当前 shell 完成（/tmp 对 runner 用户可写），sudo 只管 chroot
+            sudo chroot "$MNT" ldd "/usr/bin/$b" 2>&1 | tee "/tmp/ldd-$b.txt" || true
+            if grep -q 'not found' "/tmp/ldd-$b.txt"; then
+              echo "::error::$b 有未满足的动态库依赖（见上）"
+              rc=1
+            fi
+          done
+          [ "$rc" -eq 0 ]
+
+          echo "=== 已启用的关键服务 ==="
+          sudo chroot "$MNT" systemctl is-enabled \
+            ssh NetworkManager systemd-timesyncd hkdm grow-rootfs \
+            getty@tty1.service serial-getty@ttyGS0.service || true
 
           echo "=== 占用情况 ==="
           df -h "$MNT"
@@ -147,10 +207,24 @@ jobs:
             echo "::error::镜像仍处于挂载状态，拒绝打包"
             exit 1
           fi
-          e2fsck -f -y root.img || true
+          # e2fsck 返回码：0=干净 1=已修复 2=已修复需重启 >=4=有未修复错误。
+          # 之前的 `|| true` 会把 4 也吞掉，等于这道检查白做。
+          set +e
+          e2fsck -f -y root.img
+          fsck_rc=$?
+          set -e
+          echo "e2fsck 返回 $fsck_rc"
+          if [ "$fsck_rc" -ge 4 ]; then
+            echo "::error::文件系统存在未修复的错误，拒绝打包"
+            exit 1
+          fi
+
           img2simg root.img rootfs.img
+          # 版本化产物
           zip -9 "$ARTIFACT" rootfs.img
-          ls -lh root.img rootfs.img "$ARTIFACT"
+          # latest 用固定文件名，下载直链才真的不变
+          zip -9 rootfs.zip rootfs.img
+          ls -lh root.img rootfs.img "$ARTIFACT" rootfs.zip
 
       - name: 发布版本化 Release
         uses: ncipollo/release-action@v1
@@ -160,6 +234,7 @@ jobs:
           artifacts: ${{ env.ARTIFACT }}
           allowUpdates: true
           makeLatest: true
+          commit: ${{ github.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
             ARM64 Debian 底包（rootfs）。固件与内核模块需用本地脚本注入。
@@ -168,22 +243,25 @@ jobs:
             |---|---|
             | Debian | ${{ env.DEBVER }} (${{ env.SUITE }}) |
             | 构建时间 | ${{ env.BUILD_STAMP }} CST |
-            | Locale | ${{ env.LOCALE }} |
+            | Locale | ${{ env.LOCALE }}（另附 ${{ env.EXTRA_LOCALE }} 可切换） |
             | 提交 | ${{ github.sha }} |
 
-            - 用户名 `kschen`，tty1 自动登录
+            - 用户名 `${{ env.USERNAME }}`，tty1 与 USB 串口均自动登录
             - 密码来自仓库 secret `ROOTFS_PASSWORD`，未设置时为 `1`
             - 首次启动自动扩容根文件系统，无需手动 resize2fs
+            - 音量下键切换 buffyboard 虚拟键盘，电源键短按切屏幕亮度、长按关机
 
       # 固定入口：URL 永不变，方便脚本/书签直链。
-      # removeArtifacts 必须开——产物名带版本号，不清旧的会越堆越多。
+      # 资产名必须是固定的 rootfs.zip —— 带版本号的文件名会让直链每次构建都变，
+      # 那就失去「固定入口」的意义了。
+      # removeArtifacts 必须开，不清旧的会越堆越多。
       # makeLatest 设 false，让上面那个带版本的 Release 保住 Latest 徽章。
       - name: 更新 latest 固定入口
         uses: ncipollo/release-action@v1
         with:
           tag: ARM64_Debian_RootFS
           name: Latest — Debian ${{ env.DEBVER }} (${{ env.SUITE }})
-          artifacts: ${{ env.ARTIFACT }}
+          artifacts: rootfs.zip
           allowUpdates: true
           removeArtifacts: true
           makeLatest: false
@@ -191,6 +269,11 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
             **最新构建的固定下载入口**，内容随每次构建更新。
+            资产名固定为 `rootfs.zip`，直链地址永不变：
+
+            ```
+            https://github.com/${{ github.repository }}/releases/download/ARM64_Debian_RootFS/rootfs.zip
+            ```
 
             | | |
             |---|---|

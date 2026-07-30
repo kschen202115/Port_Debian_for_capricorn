@@ -1,12 +1,24 @@
 [Unit]
 Description=Hotkey Daemon (For) Mobile
-After=multi-user.target
+Documentation=file:/etc/hkdm/config.d/power.toml
+# 原来写的是 After=multi-user.target，而本单元自己又 WantedBy=multi-user.target，
+# 语义变成「等所有 multi-user 单元都起完才启动」，白白延迟且没解决真正的依赖。
+# hkdm 要读 /dev/input/event*，真正要等的是 udev 把设备节点填好。
+After=systemd-udev-settle.service systemd-user-sessions.service
+Wants=systemd-udev-settle.service
+# 二进制来自仓库的 usr/bin/，是真会缺的那个。缺了就别启动，
+# 否则 Restart 会刷一串无意义的失败日志
+ConditionPathExists=/usr/bin/hkdm
+ConditionPathExists=/etc/hkdm
 
 [Service]
 Type=simple
 ExecStart=/usr/bin/hkdm
 Restart=on-failure
 RestartSec=3
+# 只杀主进程。power.sh 现在用 systemctl 起 buffyboard，
+# 后者已在自己的 cgroup 里，不会被这里带走 —— 保险起见仍显式声明
+KillMode=process
 
 [Install]
 WantedBy=multi-user.target
