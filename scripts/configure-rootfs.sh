@@ -67,7 +67,8 @@ apt-get install -y --no-install-recommends \
     make git \
     libevdev2 libinput10 libxkbcommon0 \
     initramfs-tools busybox \
-    ncurses-term
+    ncurses-term \
+    libinih1
 
 # ---------------------------------------------------------------------------
 echo "=============== locale ==============="
