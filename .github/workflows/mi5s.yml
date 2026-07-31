@@ -42,7 +42,8 @@ on:
       rootfs_url:
         description: "root.zip URL"
         required: true
-        default: "https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_debian/root.zip"
+        default: "https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/ARM64_Debian_RootFS/rootfs.zip"
+        # default: "https://github.com/kschen202115/Port_Debian_for_capricorn/releases/download/Linux_Kernel_debian/root.zip"
 env:
   TZ: Asia/Shanghai
 
