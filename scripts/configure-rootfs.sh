@@ -64,7 +64,7 @@ apt-get install -y --no-install-recommends \
     libpam-systemd \
     systemd-timesyncd \
     htop kmod usbutils fdisk \
-    make git \
+    make zram-tools git \
     libevdev2 libinput10 libxkbcommon0 \
     initramfs-tools busybox \
     ncurses-term \
