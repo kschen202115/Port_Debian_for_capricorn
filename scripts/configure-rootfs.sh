@@ -205,6 +205,14 @@ systemctl enable serial-getty@ttyGS0.service
 require_file /usr/local/sbin/grow-rootfs
 systemctl enable grow-rootfs.service
 
+chown root:root /etc/hkdm
+chown root:root /etc/hkdm/config.d
+chown root:root /etc/hkdm/config.d/power.toml
+
+chmod 755 /etc/hkdm
+chmod 755 /etc/hkdm/config.d
+chmod 644 /etc/hkdm/config.d/power.toml
+
 # hkdm / buffyboard。判断的是二进制而不是 unit 文件 —— unit 来自 overlay，
 # 必然存在，拿它做条件等于没判断；二进制来自 usr/bin/，才是真会缺的那个
 if [ -x /usr/bin/hkdm ]; then
