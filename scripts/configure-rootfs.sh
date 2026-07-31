@@ -175,35 +175,23 @@ echo "=============== systemd 服务 ==============="
 systemctl enable ssh
 systemctl enable NetworkManager
 # 开机自动校时。这台机器时钟不准会导致 apt 校验 Release 的 Valid-Until 失败，
-# 治本，替代手动 ntpdate
+
 systemctl enable systemd-timesyncd
 
 # tty1 自动登录（Debian 通常已通过 getty.target.wants 静态启用，这条兜底）
 systemctl enable getty@tty1.service
 
 # USB 串口自动登录。用 systemd 自带的 serial-getty@ 模板 + agetty，
-# 不再用自己写的 auto_ttyGS0.sh：
-#   1. 那个脚本 exec setsid ...，而 systemd 已把主进程设为 session leader，
-#      util-linux 的 setsid 此时会 fork 并让父进程立刻退出 → systemd 认为
-#      服务已结束 → Restart=always 每 5 秒再起一个 login 抢同一个串口
-#   2. setsid 不带 -c 不做 TIOCSCTTY，那个 tty 不是控制终端 → 无 job control，
-#      Ctrl-C / Ctrl-Z 全部失效
-#   3. 不带 CLOCAL 时，主机未连接（无 carrier）的 open() 会阻塞
-# serial-getty@.service 模板自带 BindsTo=dev-%i.device，udev 发现设备才启动、
-# 设备消失就停止，正好替掉脚本里那个 while sleep 5 轮询
+
 systemctl enable serial-getty@ttyGS0.service
 
 # 开机自动扩容根文件系统到分区实际大小。
-#
-# 原来这里写的是：
-#   systemctl add-wants local-fs.target systemd-growfs-root.service
-# 但 systemd-growfs-root.service 并不是一个可以被依赖的静态单元 —— 它由
-# systemd-fstab-generator 在 fstab 里看到 x-systemd.growfs 选项时动态生成。
-# 这个镜像刻意没有 fstab，那个单元根本不存在，add-wants 会直接报
-# "Unit systemd-growfs-root.service does not exist"，在 set -e 下把构建搞挂。
-# 改用自带的 grow-rootfs.service（走 resize2fs，e2fsprogs 在基础系统里）
+
 require_file /usr/local/sbin/grow-rootfs
 systemctl enable grow-rootfs.service
+
+#启用zram
+systemctl enable zramswap
 
 chown root:root /etc/hkdm
 chown root:root /etc/hkdm/config.d
