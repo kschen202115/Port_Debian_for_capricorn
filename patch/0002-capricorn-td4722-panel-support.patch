@@ -54,7 +54,7 @@ diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts b/arch/arm
 +		     <0x3 0xd8 0x2 IRQ_TYPE_EDGE_RISING>;
 +	interrupt-names = "ovp", "short";
 +
-+	qcom,current-boost-limit = <980>;
++	qcom,current-boost-limit = <970>;
 +	qcom,current-limit-microamp = <20000>;
 +	qcom,ovp-millivolt = <29500>;
 +	qcom,switching-freq = <600>;
