@@ -11,10 +11,9 @@ index 821146b..15f7834 100644
  dtb-$(CONFIG_ARCH_QCOM)	+= msm8996pro-xiaomi-scorpio.dtb
  dtb-$(CONFIG_ARCH_QCOM)	+= msm8998-asus-novago-tp370ql.dtb
 diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
-index 61cf232..5a50c6b 100644
 --- a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
 +++ b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
-@@ -22,7 +22,7 @@ touchscreen@20 {
+@@ -22,7 +22,7 @@
  		compatible = "syna,rmi4-i2c";
  		reg = <0x20>;
  		interrupt-parent = <&tlmm>;
@@ -23,34 +22,42 @@ index 61cf232..5a50c6b 100644
  		vdd-supply = <&vdd_3v2_tp>;
  		syna,reset-delay-ms = <200>;
  		syna,startup-delay-ms = <5>;
-@@ -54,7 +54,11 @@ &mdss_dsi0 {
+@@ -42,6 +42,10 @@
+ 	monitored-battery = <&battery>;
+ };
+ 
++&hsusb_phy1 {
++	vdd-supply = <&vreg_l28a_0p925>;
++};
++
+ &mdss_dsi0 {
+ 	status = "okay";
+ 
+@@ -54,7 +58,11 @@
  	pinctrl-1 = <&mdss_dsi_sleep &mdss_te_sleep>;
  
  	panel: panel@0 {
-+	#ifdef CAPRICORN_TD4722_PANEL
++#ifdef CAPRICORN_TD4722_PANEL
 +		compatible = "lgd,td4722";
-+	#else
++#else
  		compatible = "jdi,fhd-r63452";
-+	#endif
++#endif
  		reg = <0>;
  		reset-gpios = <&tlmm 8 GPIO_ACTIVE_LOW>;
  		backlight = <&pmi8994_wled>;
-@@ -73,6 +77,18 @@ &mdss_dsi0_out {
+@@ -73,6 +81,15 @@
  
  &pmi8994_wled {
  	status = "okay";
-+	interrupts = <0x3 0xd8 0x2 IRQ_TYPE_EDGE_RISING>;
-+	interrupt-names = "short";
-+	qcom,vref-mv = <0x72f8>;
-+	qcom,switch-freq-khz = <0x258>;
-+	qcom,ovp-mv = <0x733c>;
-+	qcom,ilim-ma = <0x3d4>;
-+	qcom,boost-duty-ns = <0x1a>;
-+	qcom,mod-freq-khz = <0x2580>;
-+	qcom,hyb-thres = <0x271>;
-+	qcom,sync-dly-us = <0x320>;
-+	qcom,fs-curr-ua = <0x4e20>;
-+	qcom,cons-sync-write-delay-us = <0x3e8>;
++
++	interrupts = <0x3 0xd8 0x0 IRQ_TYPE_EDGE_RISING>,
++		     <0x3 0xd8 0x2 IRQ_TYPE_EDGE_RISING>;
++	interrupt-names = "ovp", "short";
++
++	qcom,current-boost-limit = <980>;
++	qcom,current-limit-microamp = <20000>;
++	qcom,ovp-millivolt = <29500>;
++	qcom,switching-freq = <600>;
  };
  
  &mss_pil {
