@@ -1,0 +1,16 @@
+[Unit]
+Description=Hand VOL+/VOL-/POWER to hkdm (void them in the console keymap)
+Documentation=man:loadkeys(1) man:keymaps(5)
+# 键表是全局的、后加载的覆盖先加载的，
+# 所以必须排在所有会动键表的单元后面。列了不存在的单元也无害。
+After=keyboard-setup.service console-setup.service systemd-vconsole-setup.service
+ConditionPathExists=/etc/console-keys.kmap
+ConditionPathExists=/dev/tty0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/console-keys
+
+[Install]
+WantedBy=multi-user.target
