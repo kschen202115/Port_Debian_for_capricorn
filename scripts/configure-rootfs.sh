@@ -205,6 +205,8 @@ chmod 755 /usr/local/bin/*
 chmod 755 /usr/local/libexec/*
 chmod 755 /usr/local/sbin/*
 
+systemctl enable console-keys.service
+
 # hkdm / buffyboard。判断的是二进制而不是 unit 文件 —— unit 来自 overlay，
 # 必然存在，拿它做条件等于没判断；二进制来自 usr/bin/，才是真会缺的那个
 if [ -x /usr/bin/hkdm ]; then
