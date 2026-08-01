@@ -1,18 +1,28 @@
+# 三个物理键全部交给 volmenu 分发，由它按菜单状态决定语义。
+#
+#   菜单关闭：VOL+ 打开菜单 / VOL- 切虚拟键盘 / POWER 开关屏幕
+#   菜单打开：VOL+ 上移     / VOL- 下移        / POWER 确认
+#
+# 不使用组合键：hkdm 处理 keys 数组多于一个元素时会 spin 到 100% CPU
+# （现象是 systemd 管的那个实例持续 R 状态），排查未完成，先规避。
+
 [[events]]
-# 事件名（可选）
-name = "kb"
+name = "volup"
 event_type = "EV_KEY"
-# 只对 EV_KEY 有效：命令在按下还是松开时触发
+key_state = "released"
+keys = ["KEY_VOLUMEUP"]
+command = "/usr/local/bin/volmenu key up"
+
+[[events]]
+name = "voldown"
+event_type = "EV_KEY"
 key_state = "released"
 keys = ["KEY_VOLUMEDOWN"]
-command = "/usr/bin/power.sh kb"
+command = "/usr/local/bin/volmenu key down"
 
 [[events]]
 name = "power"
 event_type = "EV_KEY"
-# 松开电源键 -> 切换屏幕亮度。
-# 长按关机由 logind 处理（见 /etc/systemd/logind.conf.d/10-powerkey.conf
-# 里的 HandlePowerKeyLongPress=poweroff），两者不冲突：evdev 允许多个读者。
 key_state = "released"
 keys = ["KEY_POWER"]
-command = "/usr/bin/power.sh power"
+command = "/usr/local/bin/volmenu key enter"

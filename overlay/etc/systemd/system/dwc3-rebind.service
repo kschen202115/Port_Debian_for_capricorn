@@ -1,0 +1,20 @@
+[Unit]
+Description=Rebind dwc3 after boot-time QUSB2 PHY probe failure (capricorn)
+After=basic.target
+ConditionPathExists=!/sys/bus/platform/drivers/dwc3/6a00000.usb
+
+# 兜底手段，默认不 enable。
+# 根因已由 DT 修复（phy@7411000 加 qcom,tcsr-syscon）——驱动需要读 TCSR 的
+# PHY_CLK_SCHEME 寄存器才能判断参考时钟是单端还是差分，拿不到就配错、PLL 锁不住，
+# dwc3 probe 直接 -EBUSY。修好后开机 probe 正常，本单元的 Condition 会让它自动跳过。
+# 万一换了内核又复现，systemctl enable --now dwc3-rebind 即可。
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/dwc3-rebind
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
