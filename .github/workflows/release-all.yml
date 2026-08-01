@@ -70,15 +70,17 @@ jobs:
           cat > "$RUNNER_TEMP/run_and_wait.sh" <<'SH'
           #!/usr/bin/env bash
           # run_and_wait <workflow 文件名> [gh workflow run 的额外参数...]
+          #
+          # 静默等待：不用 gh run watch —— 它是给 TTY 设计的，在 Actions 日志里
+          # 会把整屏刷新展开成成百上千行。这里改成轮询，只在状态变化时打一行。
           set -euo pipefail
           wf="$1"; shift
 
           # 记录触发前的时间戳，用它筛出「本次」产生的 run。
           # 不能只取最新一条 —— 并发触发时会认错。
           before=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          echo "::group::触发 $wf"
+          t0=$(date +%s)
           gh workflow run "$wf" --ref "$REF" "$@"
-          echo "::endgroup::"
 
           # dispatch 是异步的，run 不会立刻出现，轮询最多 2 分钟
           id=""
@@ -99,12 +101,43 @@ jobs:
           fi
 
           url="https://github.com/$GH_REPO/actions/runs/$id"
-          echo "::notice::$wf -> run $id"
+          echo "$wf  run $id"
           echo "$url"
-          echo "- [$wf]($url)" >> "$GITHUB_STEP_SUMMARY"
 
-          # --exit-status：失败时以非零码退出，让本 job 一起失败
-          gh run watch "$id" --exit-status
+          # 登记下来，供最后的兜底清理步骤使用
+          echo "$id" >> "$RUNNER_TEMP/child_runs"
+
+          # 取消编排 job 时，本步骤会先收到 SIGINT 再 SIGTERM。
+          # 子 run 是独立的 workflow run，不会被连带取消，必须显式 cancel。
+          on_signal() {
+            echo "::warning::收到中断信号，取消子任务 $id"
+            gh run cancel "$id" >/dev/null 2>&1 || true
+            exit 130
+          }
+          trap on_signal INT TERM
+
+          # 每 30 秒查一次，只在状态变化时输出
+          last=""
+          while :; do
+            read -r status conclusion < <(
+              gh run view "$id" --json status,conclusion \
+                 --jq '"\(.status) \(.conclusion // "-")"')
+            if [ "$status" != "$last" ]; then
+              printf '  [%s] %s\n' "$(date -u +%H:%M:%S)" "$status"
+              last="$status"
+            fi
+            [ "$status" = completed ] && break
+            sleep 30
+          done
+
+          el=$(( $(date +%s) - t0 ))
+          printf '  结束: %s  用时 %dm%02ds\n' "$conclusion" $(( el / 60 )) $(( el % 60 ))
+          echo "- [$wf]($url) — $conclusion，用时 $(( el / 60 ))m" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$conclusion" != success ]; then
+            echo "::error::$wf 未成功（$conclusion），详见 $url"
+            exit 1
+          fi
           SH
           chmod +x "$RUNNER_TEMP/run_and_wait.sh"
 
@@ -128,6 +161,23 @@ jobs:
             -f add_firmware='${{ inputs.add_firmware }}' \
             -f use_clang='${{ inputs.use_clang }}' \
             -f rootfs_url="https://github.com/$GH_REPO/releases/download/ARM64_Debian_RootFS/rootfs.zip"
+
+      # 兜底：trap 只在「正在等待」的那一步生效。若取消发生在步骤间隙，
+      # 或 trap 没来得及执行，这里再扫一遍所有登记过的子 run。
+      - name: 取消未结束的子任务
+        if: cancelled() || failure()
+        run: |
+          set -uo pipefail
+          [ -f "$RUNNER_TEMP/child_runs" ] || exit 0
+          while read -r id; do
+            [ -n "$id" ] || continue
+            st=$(gh run view "$id" --json status --jq .status 2>/dev/null || echo "")
+            case "$st" in
+              completed|"") ;;
+              *) echo "取消 run $id（当前 $st）"
+                 gh run cancel "$id" >/dev/null 2>&1 || true ;;
+            esac
+          done < "$RUNNER_TEMP/child_runs"
 
       - name: 汇总
         if: always()
