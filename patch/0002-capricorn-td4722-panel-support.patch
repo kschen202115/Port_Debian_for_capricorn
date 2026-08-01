@@ -51,6 +51,7 @@ diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts b/arch/arm
  	status = "okay";
 +
 +	interrupts = <0x3 0xd8 0x2 IRQ_TYPE_EDGE_RISING>;
++
 +	interrupt-names = "short";
 +
 +	qcom,current-boost-limit = <970>;
