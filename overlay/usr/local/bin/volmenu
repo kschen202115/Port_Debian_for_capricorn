@@ -1,0 +1,372 @@
+#!/bin/bash
+# volmenu - on-screen menu driven by 3 hardware keys (Xiaomi Mi 5s / capricorn)
+#
+# 架构：输入全部由 hkdm 从 evdev 读，本脚本只往 tty 写，从不读 tty。
+#       因此不需要停 getty、不需要抢终端、不需要改键表。
+#
+# 显示：控制台字体是 16x32x256（VGA），只有 256 个字形，无法显示中文，
+#       因此界面全部使用 ASCII。也不画右边框 —— 免掉宽度计算，
+#       既避免对不齐，也省掉每行两次命令替换。
+#
+#   volmenu key <up|down|enter>
+#   volmenu close
+#   volmenu status
+#
+# 菜单关闭时：VOL+ 打开菜单，VOL- 切虚拟键盘，POWER 开关屏幕（下电面板）。
+# 不使用组合键 —— hkdm 处理组合键时会 spin 到 100% CPU。
+
+set -uo pipefail
+
+TTY=${VOLMENU_TTY:-/dev/tty1}
+RUN=/run/volmenu
+STATE=$RUN/state
+STAMP=$RUN/stamp
+IDLE_TIMEOUT=45
+
+P=/sys/class/power_supply/qcom-smbchg-usb
+B=/sys/class/power_supply/qcom-battery
+DWC3_MODE=/sys/kernel/debug/usb/6a00000.usb/mode
+
+[ "$(id -u)" -eq 0 ] || exec sudo -- "$0" "$@"
+mkdir -p "$RUN"
+
+# ── 取值：全部用 bash 内建读文件，避免 fork ──
+rd() { local v=""; [ -r "$1" ] && read -r v < "$1"; REPLY=$v; }
+rn() { rd "$1"; [[ "$REPLY" =~ ^-?[0-9]+$ ]] || REPLY=0; }
+
+BL=""
+for d in /sys/class/backlight/*/; do [ -r "${d}brightness" ] && { BL=$d; break; }; done
+
+# 约定：取值函数把结果放进 REPLY，不用 echo —— 省掉每行一次 fork
+v_usbmode() { rd "$DWC3_MODE"; REPLY=${REPLY:-?}; }
+v_icl()     { rn $P/input_current_limit; REPLY="$(( REPLY / 1000 )) mA"; }
+v_bl()      { local c m
+              rn /sys/class/graphics/fb0/blank
+              [ "$REPLY" != 0 ] && { REPLY="panel off"; return; }
+              rn "${BL}brightness"; c=$REPLY; rn "${BL}max_brightness"; m=$REPLY
+              REPLY="$(( m ? c*100/m : 0 ))%"; }
+# systemd 给每个活跃 unit 建 cgroup 目录，一次 test 即可判定，
+# 比扫 /proc（46 ms）或 systemctl is-active（dbus 往返）快两个数量级
+v_kb()      { [ -e /sys/fs/cgroup/system.slice/buffyboard.service/cgroup.procs ] \
+                  && REPLY=on || REPLY=off; }
+CPUFREQ=/sys/devices/system/cpu/cpufreq
+v_cpu()     { local g f0 f2
+              rd $CPUFREQ/policy0/scaling_governor; g=$REPLY
+              rn $CPUFREQ/policy0/scaling_cur_freq; f0=$(( REPLY / 1000 ))
+              rn $CPUFREQ/policy2/scaling_cur_freq; f2=$(( REPLY / 1000 ))
+              REPLY="$g $f0/${f2}M"; }
+v_gov()     { rd $CPUFREQ/policy0/scaling_governor; }
+v_cmax()    { local lo hi cur
+              rn $CPUFREQ/policy2/cpuinfo_min_freq; lo=$REPLY
+              rn $CPUFREQ/policy2/cpuinfo_max_freq; hi=$REPLY
+              rn $CPUFREQ/policy2/scaling_max_freq; cur=$REPLY
+              REPLY="$(( hi > lo ? (cur - lo) * 100 / (hi - lo) : 100 ))% ($(( cur / 1000 ))M)"; }
+# 把百分比换算成该 policy 频率表里不超过目标的最大档位
+pick_freq() { local d=$1 pct=$2 lo hi target best=0 f
+              rn "$d/cpuinfo_min_freq"; lo=$REPLY
+              rn "$d/cpuinfo_max_freq"; hi=$REPLY
+              target=$(( lo + (hi - lo) * pct / 100 ))
+              for f in $(cat "$d/scaling_available_frequencies" 2>/dev/null); do
+                  [ "$f" -le "$target" ] && [ "$f" -gt "$best" ] && best=$f
+              done
+              [ "$best" = 0 ] && best=$lo
+              REPLY=$best; }
+v_batt()    { local c s; rn $B/capacity; c=$REPLY; rd $B/status; s=$REPLY
+              case "$s" in Charging) s=Chg;; Discharging) s=Dis;; Full) s=Full;; esac
+              REPLY="$c% $s"; }
+
+# ── 菜单定义：显示名 | 取值函数 | 动作 ──
+menu_items() {
+	case "$1" in
+	main)
+		echo "USB Mode|v_usbmode|goto usb"
+		echo "Charge Limit|v_icl|goto icl"
+		echo "Battery|v_batt|page batt"
+		echo "Brightness|v_bl|goto bl"
+		echo "Keyboard|v_kb|do kb toggle"
+		echo "CPU|v_cpu|goto cpu"
+		echo "Network||page net"
+		echo "Power||goto pwr"
+		echo "Exit||close" ;;
+	usb)
+		echo "device (sink/gadget)||do usb device"
+		echo "host (OTG source)||do usb host"
+		echo "otg (auto by CC)||do usb otg"
+		echo "< Back||goto main" ;;
+	icl)
+		echo "500 mA||do icl 500"
+		echo "1000 mA||do icl 1000"
+		echo "1500 mA||do icl 1500"
+		echo "2000 mA||do icl 2000"
+		echo "3000 mA (max)||do icl 3000"
+		echo "< Back||goto main" ;;
+	bl)
+		echo "Panel OFF (power down)||do bl 0"
+		echo "25%||do bl 25"
+		echo "50%||do bl 50"
+		echo "75%||do bl 75"
+		echo "100%||do bl 100"
+		echo "< Back||goto main" ;;
+	cpu)
+		echo "Governor|v_gov|goto gov"
+		echo "Max Frequency|v_cmax|goto cmax"
+		echo "CPU Details||page cpu"
+		echo "< Back||goto main" ;;
+	gov)
+		echo "schedutil (default)||do gov schedutil"
+		echo "performance (max)||do gov performance"
+		echo "powersave (min)||do gov powersave"
+		echo "ondemand||do gov ondemand"
+		echo "conservative||do gov conservative"
+		echo "< Back||goto cpu" ;;
+	cmax)
+		echo "100% (unrestricted)||do cmax 100"
+		echo "75%||do cmax 75"
+		echo "50%||do cmax 50"
+		echo "25% (coolest)||do cmax 25"
+		echo "< Back||goto cpu" ;;
+	pwr)
+		echo "Reboot||confirm reboot"
+		echo "Power Off||confirm poweroff"
+		echo "< Back||goto main" ;;
+	confirm-reboot)
+		echo "Cancel||goto pwr"
+		echo "YES - Reboot now||do sys reboot" ;;
+	confirm-poweroff)
+		echo "Cancel||goto pwr"
+		echo "YES - Power off now||do sys poweroff" ;;
+	esac
+}
+
+menu_title() {   # 结果放进 MTITLE
+	case "$1" in
+	main) MTITLE="SYSTEM MENU" ;; usb) MTITLE="USB MODE" ;;  icl) MTITLE="CHARGE LIMIT" ;;
+	bl)   MTITLE="BRIGHTNESS" ;;  pwr) MTITLE="POWER" ;;
+	cpu)  MTITLE="CPU" ;;  gov) MTITLE="CPU GOVERNOR" ;;  cmax) MTITLE="CPU MAX FREQ" ;;
+	confirm-reboot)   MTITLE="REBOOT ?" ;;
+	confirm-poweroff) MTITLE="POWER OFF ?" ;;
+	*) MTITLE="$1" ;;
+	esac
+}
+
+# ── 渲染：无右边框，printf 一次成型 ──
+RULE="--------------------------------------------------------------"
+NITEMS=0
+
+draw() {
+	local page=$1 cur=$2 out="" i=0 name valf act val ln
+	out=$'\033[H\033[J'
+	menu_title "$page"
+	out+=$'\033[1;37m '"$MTITLE"$'\033[0m\n'
+	out+=$'\033[1;36m'"$RULE"$'\033[0m\n'
+	while IFS='|' read -r name valf act; do
+		[ -z "$name" ] && continue
+		val=""
+		if [ -n "$valf" ]; then $valf; val="[$REPLY]"; fi
+		printf -v ln '%-22s%s' "$name" "$val"
+		if [ "$i" = "$cur" ]; then
+			out+=$'\033[1;30;46m > '"$ln"$'\033[0m\n'
+		else
+			out+="   $ln"$'\n'
+		fi
+		i=$((i+1))
+	done < <(menu_items "$page")
+	NITEMS=$i
+	out+=$'\033[1;36m'"$RULE"$'\033[0m\n'
+	out+=$'\033[2m VOL+ up   VOL- down   PWR select\033[0m\n'
+	printf '%s' "$out" > "$TTY" 2>/dev/null
+}
+
+kv() { printf ' %-16s%s\n' "$1" "$2"; }
+
+draw_page() {
+	local what=$1 out=""
+	out=$'\033[H\033[J'
+	case "$what" in
+	batt)
+		local cur amps dir volt cap cfd temp rem h m
+		rn $B/current_now; cur=$REPLY
+		rn $B/capacity;    cap=$REPLY
+		rn $B/voltage_now; volt=$REPLY
+		rn $B/charge_full_design; cfd=$REPLY
+		rn $B/temp; temp=$REPLY
+		if [ "$cur" -lt 0 ]; then amps=$(( -cur )); dir="in"; else amps=$cur; dir="out"; fi
+		out+=$'\033[1;37m BATTERY\033[0m\n'
+		out+=$'\033[1;36m'"$RULE"$'\033[0m\n'
+		rd $B/status
+		out+="$(kv Status "$REPLY")"$'\n'
+		out+="$(kv Capacity "$cap %")"$'\n'
+		out+="$(kv Voltage "$(( volt / 1000000 )).$(printf %03d $(( volt % 1000000 / 1000 ))) V")"$'\n'
+		out+="$(kv Current "$(( amps / 1000 )) mA ($dir)")"$'\n'
+		out+="$(kv Power "$(( volt / 1000 * (amps / 1000) / 1000000 )).$(( volt / 1000 * (amps/1000) / 10000 % 100 )) W")"$'\n'
+		out+="$(kv Temp "$(( temp / 10 )).$(( temp % 10 )) C")"$'\n'
+		rd $P/usb_type
+		out+="$(kv Charger "${REPLY:-none}")"$'\n'
+		v_icl; out+="$(kv "Input limit" "$REPLY")"$'\n'
+		rd $B/status
+		if [ "$REPLY" = Charging ] && [ "$amps" -gt 20000 ]; then
+			rem=$(( (100 - cap) * cfd / 100 ))
+			h=$(( rem / amps )); m=$(( (rem % amps) * 60 / amps ))
+			out+="$(kv "Full in" "~ ${h}h ${m}m")"$'\n'
+		fi ;;
+	cpu)
+		out+=$'\033[1;37m CPU DETAILS\033[0m\n'
+		out+=$'\033[1;36m'"$RULE"$'\033[0m\n'
+		local d nm cpus g cur mn mx t
+		for d in $CPUFREQ/policy*/; do
+			rd "$d/related_cpus";     cpus=$REPLY
+			rd "$d/scaling_governor"; g=$REPLY
+			rn "$d/scaling_cur_freq"; cur=$(( REPLY / 1000 ))
+			rn "$d/scaling_min_freq"; mn=$(( REPLY / 1000 ))
+			rn "$d/scaling_max_freq"; mx=$(( REPLY / 1000 ))
+			case "$cpus" in "0 1") nm="LITTLE cpu0-1" ;; "2 3") nm="big cpu2-3" ;; *) nm="cpu $cpus" ;; esac
+			out+="$(kv "$nm" "$g")"$'\n'
+			out+="$(kv "  now / max" "$cur / $mx MHz")"$'\n'
+			out+="$(kv "  floor" "$mn MHz")"$'\n'
+		done
+		rn /sys/class/thermal/thermal_zone0/temp; t=$(( REPLY / 1000 ))
+		out+="$(kv "temp" "$t C")"$'\n'
+		rd /proc/loadavg
+		out+="$(kv "loadavg" "$REPLY")"$'\n' ;;
+	net)
+		out+=$'\033[1;37m NETWORK\033[0m\n'
+		out+=$'\033[1;36m'"$RULE"$'\033[0m\n'
+		local l
+		while read -r l; do [ -n "$l" ] && out+="$(kv "" "$l")"$'\n'; done \
+			< <(ip -4 -br addr show scope global 2>/dev/null | awk '{print $1"  "$3}')
+		# iw 未安装；NetworkManager 是本机现成的，用 nmcli 取 SSID
+		out+="$(kv SSID "$(nmcli -t -f active,ssid dev wifi 2>/dev/null | awk -F: '$1=="yes"{print $2; exit}')")"$'\n'
+		out+="$(kv SSH "$(systemctl is-active ssh 2>/dev/null)")"$'\n' ;;
+	esac
+	out+=$'\033[1;36m'"$RULE"$'\033[0m\n'
+	out+=$'\033[2m any key = back\033[0m\n'
+	printf '%s' "$out" > "$TTY" 2>/dev/null
+}
+
+clear_tty() {
+	printf '\033[H\033[J\033[2m press VOL+ for menu\033[0m\n' > "$TTY" 2>/dev/null
+	# 清屏会把 shell 提示符擦掉，而 bash 阻塞在 read 上不会自己重画。
+	# 往 tty 输入队列注入一个换行 —— bash 读到就打印新提示符。
+	# 试过但无效的：SIGWINCH（rl_resize_terminal 见尺寸未变即跳过重绘）、
+	# 真实改窗口尺寸（同样无效）、restart getty（会把 logind 和 SSH 一起拖挂）。
+	[ "$TTY" = /dev/tty1 ] && /usr/local/libexec/tty-nudge "$TTY" 2>/dev/null
+	return 0
+}
+
+# ── 状态 ──
+set_state() { echo "$1" > "$STATE"; printf '%(%s)T\n' -1 > "$STAMP"; }
+arm_timeout() {
+	setsid sh -c "sleep $IDLE_TIMEOUT
+	    now=\$(date +%s); last=\$(cat $STAMP 2>/dev/null || echo 0)
+	    [ \$(( now - last )) -ge $IDLE_TIMEOUT ] && $0 close" </dev/null >/dev/null 2>&1 &
+}
+
+render() {
+	local page=${1%%:*} cur=${1##*:}
+	[[ "$cur" =~ ^[0-9]+$ ]] || cur=0
+	case "$page" in
+		page-*) draw_page "${page#page-}" ;;
+		*)      draw "$page" "$cur" ;;
+	esac
+}
+
+# ── 动作 ──
+do_action() {
+	local kind=$1 arg=${2:-}
+	case "$kind" in
+	usb)
+		rn $P/online
+		if [ "$arg" = host ] && [ "$REPLY" = 1 ]; then
+			flash "charger attached - host refused"
+		else
+			echo "$arg" > "$DWC3_MODE" 2>/dev/null
+			sleep 1; rd "$DWC3_MODE"
+			[ "$REPLY" = "$arg" ] && flash "mode -> $arg" || flash "not applied (CC controls role)"
+		fi ;;
+	icl) echo $(( arg * 1000 )) > $P/input_current_limit 2>/dev/null; flash "input limit -> $arg mA" ;;
+	bl)  if [ "$arg" = 0 ]; then
+	         /usr/local/bin/screenctl off >/dev/null 2>&1
+	         flash "panel powered down"
+	     else
+	         /usr/local/bin/screenctl on >/dev/null 2>&1
+	         rn "${BL}max_brightness"; echo $(( REPLY * arg / 100 )) > "${BL}brightness" 2>/dev/null
+	         flash "brightness -> $arg%"
+	     fi ;;
+	kb)  # 二值开关，不值得单开一级子菜单，直接在主菜单上切
+	     case "$arg" in
+	     on)     systemctl start buffyboard ;;
+	     off)    systemctl stop  buffyboard ;;
+	     toggle) v_kb
+	             if [ "$REPLY" = on ]; then systemctl stop buffyboard
+	             else systemctl start buffyboard; fi ;;
+	     esac
+	     v_kb; flash "keyboard -> $REPLY" ;;
+	gov) local d ok=0
+	     for d in $CPUFREQ/policy*/; do
+	         echo "$arg" > "$d/scaling_governor" 2>/dev/null && ok=1
+	     done
+	     rd $CPUFREQ/policy0/scaling_governor
+	     [ "$ok" = 1 ] && flash "governor -> $REPLY" || flash "failed (governor not available?)" ;;
+	cmax) local d
+	     for d in $CPUFREQ/policy*/; do
+	         pick_freq "$d" "$arg"; echo "$REPLY" > "$d/scaling_max_freq" 2>/dev/null
+	     done
+	     rn $CPUFREQ/policy2/scaling_max_freq
+	     flash "max freq -> $arg% (big core $(( REPLY / 1000 )) MHz)" ;;
+	sys) clear_tty; systemctl "$arg" ;;
+	esac
+}
+
+flash() { printf '\033[999;1H\033[K\033[1;33m %s\033[0m' "$1" > "$TTY" 2>/dev/null; }
+
+# ── 主逻辑 ──
+rd "$STATE"; ST=${REPLY:-closed}
+
+case "${1:-}" in
+close)  set_state closed; clear_tty ;;
+status) echo "state: $ST"; echo "tty:   $TTY" ;;
+key)
+	if [ "$ST" = closed ]; then
+		case "${2:-}" in
+		up)    # 屏幕可能是灭的，先点亮再画菜单
+		       /usr/local/bin/screenctl on >/dev/null 2>&1
+		       set_state "main:0"; render "main:0"; arm_timeout ;;
+		down)  /usr/bin/power.sh kb >/dev/null 2>&1 ;;
+		enter) # 原来是把背光写 0，只是不发光；现在真正下电面板
+		       /usr/local/bin/screenctl toggle >/dev/null 2>&1 ;;
+		esac
+		exit 0
+	fi
+
+	page=${ST%%:*}; cur=${ST##*:}
+	[[ "$cur" =~ ^[0-9]+$ ]] || cur=0
+
+	if [ "${page#page-}" != "$page" ]; then        # 信息页：任意键返回
+		set_state "main:0"; render "main:0"; arm_timeout; exit 0
+	fi
+
+	n=0; while IFS= read -r _; do n=$((n+1)); done < <(menu_items "$page")
+
+	case "${2:-}" in
+	up)   cur=$(( (cur - 1 + n) % n )); set_state "$page:$cur"; render "$page:$cur" ;;
+	down) cur=$(( (cur + 1) % n ));     set_state "$page:$cur"; render "$page:$cur" ;;
+	enter)
+		action=""; i=0
+		while IFS='|' read -r _ _ act; do
+			[ "$i" = "$cur" ] && { action=$act; break; }
+			i=$((i+1))
+		done < <(menu_items "$page")
+		set -- $action
+		case "${1:-}" in
+		goto)    set_state "$2:0"; render "$2:0" ;;
+		page)    set_state "page-$2:0"; render "page-$2:0" ;;
+		confirm) set_state "confirm-$2:0"; render "confirm-$2:0" ;;
+		close)   set_state closed; clear_tty; exit 0 ;;
+		do)      do_action "$2" "${3:-}"; sleep 1
+		         rd "$STATE"; render "$REPLY" ;;
+		esac ;;
+	esac
+	arm_timeout ;;
+*)
+	sed -n '2,18p' "$0" | sed 's/^# \?//' ;;
+esac

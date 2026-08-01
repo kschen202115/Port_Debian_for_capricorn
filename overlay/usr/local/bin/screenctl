@@ -1,0 +1,53 @@
+#!/bin/bash
+# screenctl on|off|toggle|status —— 屏幕开关
+#
+# 关屏用 fbcon 的 blank 接口（DRM fbdev 模拟会把它转成 DPMS off），
+# 真正下电面板：panel unprepare -> display off + enter sleep + reset 拉低，
+# 同时 drm_panel_disable 会一并关掉背光。
+#
+# 对比原来只把 backlight 写 0：那样 DSI 控制器和面板仍在持续刷像素，
+# 只是不发光，省的电有限。
+#
+# /sys/class/drm/card0-DSI-1/dpms 在本机是只读的，所以只能走 fb0/blank。
+set -u
+BLANK=/sys/class/graphics/fb0/blank
+SAVED=/run/screenctl.brightness
+BL=""
+for d in /sys/class/backlight/*/; do [ -r "$d/brightness" ] && { BL=$d; break; }; done
+
+[ "$(id -u)" -eq 0 ] || exec sudo -- "$0" "$@"
+[ -w "$BLANK" ] || { echo "无法写 $BLANK" >&2; exit 1; }
+
+read -r cur < "$BLANK"
+
+screen_off() {
+    if [ -n "$BL" ]; then
+        read -r b < "$BL/brightness"
+        [ "$b" -gt 0 ] && echo "$b" > "$SAVED"     # 记住亮度，开屏时还原
+    fi
+    echo 4 > "$BLANK"                              # FB_BLANK_POWERDOWN
+}
+
+screen_on() {
+    echo 0 > "$BLANK"                              # FB_BLANK_UNBLANK
+    if [ -n "$BL" ]; then
+        local want=0
+        [ -r "$SAVED" ] && read -r want < "$SAVED"
+        if [ "${want:-0}" -le 0 ]; then            # 没有记录过就给满亮度
+            read -r want < "$BL/max_brightness"
+        fi
+        echo "$want" > "$BL/brightness"
+    fi
+}
+
+case "${1:-toggle}" in
+on)     screen_on;  echo "screen on" ;;
+off)    screen_off; echo "screen off (panel powered down)" ;;
+toggle) if [ "$cur" = 0 ]; then screen_off; echo "screen off"; else screen_on; echo "screen on"; fi ;;
+status)
+    printf 'blank:      %s (%s)\n' "$cur" "$([ "$cur" = 0 ] && echo on || echo off)"
+    printf 'dpms:       %s\n' "$(cat /sys/class/drm/card0-DSI-1/dpms 2>/dev/null)"
+    [ -n "$BL" ] && printf 'brightness: %s / %s\n' "$(cat $BL/brightness)" "$(cat $BL/max_brightness)"
+    [ -r "$SAVED" ] && printf 'saved:      %s\n' "$(cat $SAVED)" ;;
+*) echo "用法: screenctl [on|off|toggle|status]" >&2; exit 1 ;;
+esac

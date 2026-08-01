@@ -1,0 +1,16 @@
+#!/usr/bin/perl
+# 往 tty 的输入队列注入一个换行，让阻塞在 read 上的 shell 重新打印提示符。
+#
+# volmenu 退出时会清屏，把 tty1 上的 shell 提示符擦掉，而 bash 阻塞在 read
+# 上不会自己重画。试过但无效的：SIGWINCH（readline 的 rl_resize_terminal()
+# 见尺寸未变即跳过重绘）、真实改窗口尺寸、restart getty（会把 logind 和 SSH
+# 一起拖挂）。TIOCSTI 制造的是一次真实输入，bash 没有理由忽略。
+#
+# 需要 CAP_SYS_ADMIN 且 dev.tty.legacy_tiocsti=1（本机内核 CONFIG_LEGACY_TIOCSTI=y，
+# 默认即为 1，无需额外配置）。
+use strict; use warnings;
+my $dev = shift // "/dev/tty1";
+open(my $fh, "<", $dev) or exit 1;
+my $ch = "\n";
+ioctl($fh, 0x5412, $ch) or exit 2;   # TIOCSTI
+exit 0;

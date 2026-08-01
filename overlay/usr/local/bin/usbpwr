@@ -1,0 +1,189 @@
+#!/bin/bash
+# usbpwr - Xiaomi Mi 5s (capricorn) USB 模式与充电状态工具
+set -u
+
+P=/sys/class/power_supply/qcom-smbchg-usb
+B=/sys/class/power_supply/qcom-battery
+M=/sys/kernel/debug/usb/6a00000.usb/mode
+DRV=/sys/bus/platform/drivers/dwc3
+DEV=6a00000.usb
+
+[ "$(id -u)" -eq 0 ] || exec sudo -- "$0" "$@"
+
+r()  { cat "$1" 2>/dev/null || echo ""; }
+ri() { local v; v=$(cat "$1" 2>/dev/null); [[ "$v" =~ ^-?[0-9]+$ ]] && echo "$v" || echo 0; }
+
+# ---------- Type-C 物理连接状态（直接读 TUSB320L）----------
+typec_state() {
+	command -v i2cget >/dev/null || { echo "未知 (需要 i2c-tools)"; return; }
+	local r9 v9 att
+	r9=$(i2cget -y -f 1 0x47 0x09 2>/dev/null) || { echo "读取失败"; return; }
+	v9=$((r9)); att=$(( (v9 >> 6) & 3 ))
+	case $att in
+		0) echo "未连接" ;;
+		1) echo "DFP 接入 — 对方是设备，我方应为 HOST" ;;
+		2) echo "UFP 接入 — 对方供电，我方为 DEVICE" ;;
+		3) local r8 acc; r8=$(i2cget -y -f 1 0x47 0x08 2>/dev/null); acc=$(( ($((r8)) >> 1) & 7 ))
+		   case $acc in
+			4) echo "配件接入（音频适配器）" ;;
+			5) echo "配件接入（音频+充电）" ;;
+			6|7) echo "配件接入（调试）" ;;
+			*) echo "配件接入（类型 $acc）" ;;
+		   esac ;;
+	esac
+}
+
+fmt_dur() {  # 输入小时（浮点），输出 "Xh Ym"
+	awk -v h="$1" 'BEGIN{ if (h<=0||h>999) {print "—"; exit}
+		t=int(h*60); printf "%dh %02dm", int(t/60), t%60 }'
+}
+
+status() {
+	local mode online utype icl cap cur volt temp bstat chgtype cfd vmax
+	mode=$(r "$M"); [ -z "$mode" ] && mode="(dwc3 未绑定)"
+	online=$(ri $P/online); utype=$(r $P/usb_type); chgtype=$(r $P/charge_type)
+	icl=$(( $(ri $P/input_current_limit) / 1000 ))
+	cap=$(ri $B/capacity); cur=$(ri $B/current_now); volt=$(ri $B/voltage_now)
+	temp=$(ri $B/temp); bstat=$(r $B/status)
+	cfd=$(ri $B/charge_full_design); vmax=$(ri $B/voltage_max_design)
+
+	# 本机符号约定：current_now 为负 = 电流流入电池
+	local amps dir
+	if [ "$cur" -lt 0 ]; then amps=$(( -cur )); dir="充入"; else amps=$cur; dir="放出"; fi
+
+	echo "┌─ USB ────────────────────────────────────────"
+	printf "│ 数据角色    %s\n" "$mode"
+	printf "│ 物理连接    %s\n" "$(typec_state)"
+	printf "│ extcon      tusb320 USB=%s HOST=%s │ charger USB=%s\n" \
+		"$(r /sys/class/extcon/extcon1/cable.0/state)" \
+		"$(r /sys/class/extcon/extcon1/cable.1/state)" \
+		"$(r /sys/class/extcon/extcon0/cable.0/state)"
+	local hosts; hosts=$(ls /sys/bus/usb/devices/ 2>/dev/null | tr '\n' ' ')
+	[ -n "$hosts" ] && printf "│ USB 总线    %s\n" "$hosts"
+	echo "├─ 充电器 ─────────────────────────────────────"
+	printf "│ 接入        %s\n" "$([ "$online" = 1 ] && echo "是" || echo "否")"
+	printf "│ 类型        %s\n" "$(echo "$utype" | grep -o '\[[A-Z]*\]' || echo "$utype")"
+	printf "│ 输入限流    %s mA\n" "$icl"
+	printf "│ 充电阶段    %s\n" "$chgtype"
+	echo "├─ 电池 ───────────────────────────────────────"
+	printf "│ 状态        %s\n" "$bstat"
+	printf "│ 电量        %s%%   设计容量 %s mAh\n" "$cap" "$(( cfd / 1000 ))"
+	printf "│ 电压        %s.%03s V   (满充设计 %s.%s V)\n" \
+		"$(( volt / 1000000 ))" "$(printf %03d $(( volt % 1000000 / 1000 )))" \
+		"$(( vmax / 1000000 ))" "$(( vmax % 1000000 / 100000 ))"
+	printf "│ 电流        %s mA（%s）\n" "$(( amps / 1000 ))" "$dir"
+	printf "│ 功率        %s W\n" "$(awk -v v=$volt -v i=$amps 'BEGIN{printf "%.2f", v/1e6*i/1e6}')"
+	printf "│ 温度        %s.%s °C\n" "$(( temp / 10 ))" "$(( temp % 10 ))"
+
+	echo "├─ 估算 ───────────────────────────────────────"
+	if [ "$amps" -lt 20000 ]; then
+		printf "│ 电流过小，无法估算\n"
+	elif [ "$bstat" = "Charging" ]; then
+		local rem h
+		rem=$(( (100 - cap) * cfd / 100 ))
+		h=$(awk -v r=$rem -v i=$amps 'BEGIN{printf "%.4f", r/i}')
+		printf "│ 距充满      约 %s   （剩 %s mAh @ %s mA）\n" \
+			"$(fmt_dur "$h")" "$(( rem / 1000 ))" "$(( amps / 1000 ))"
+		if [ "$volt" -gt $(( vmax - 120000 )) ]; then
+			printf "│ ⚠ 已接近满充电压，进入恒压涓流，实际会比估算慢\n"
+		fi
+	else
+		local h; h=$(awk -v c=$cap -v f=$cfd -v i=$amps 'BEGIN{printf "%.4f", c/100*f/i}')
+		printf "│ 剩余续航    约 %s   （按当前 %s mA 放电）\n" "$(fmt_dur "$h")" "$(( amps / 1000 ))"
+	fi
+	echo "└──────────────────────────────────────────────"
+}
+
+set_mode() {
+	local want=$1 before after
+	case "$want" in host|device|otg) ;; *) echo "模式只能是 host / device / otg" >&2; exit 1 ;; esac
+	[ -e "$M" ] || { echo "dwc3 未绑定，先跑: systemctl start dwc3-rebind" >&2; exit 1; }
+
+	if [ "$want" = host ] && [ "$(ri $P/online)" = 1 ] && [ "${FORCE:-0}" != 1 ]; then
+		cat >&2 <<'W'
+拒绝：充电器还插着。
+
+host 模式会打开 PMI8994 的 OTG 升压，而充电器同时在给 VBUS 供电。退出
+这个状态后 APSD 会卡死 —— 充电器仍报 online=1 但不再充电，只有物理拔插
+能恢复。
+
+先拔掉线，或用 -f 强制。
+W
+		exit 1
+	fi
+
+	before=$(r "$M")
+	echo "$want" > "$M"
+	sleep 2
+	after=$(r "$M")
+	echo "模式: $before -> $after"
+	if [ "$after" != "$want" ] && [ "$want" != otg ]; then
+		cat >&2 <<'W'
+
+⚠ 没有切过去。当前角色由 extcon（TUSB320L 的 CC 检测）接管，手写的值会被
+  立刻覆盖。要进 host，需要接一个合规的 OTG 转接头（单条 CC 上 5.1 kΩ Rd），
+  让 TUSB320L 报 "DFP attached"。
+  两条 CC 都接地的廉价头会被识别成音频配件，不会触发 host。
+W
+	fi
+}
+
+set_limit() {
+	local ma=$1
+	[[ "$ma" =~ ^[0-9]+$ ]] || { echo "限流需要是整数 mA" >&2; exit 1; }
+	[ "$ma" -gt 3000 ] && { echo "拒绝：超过 3000 mA（PMI8994 上限）" >&2; exit 1; }
+	echo $(( ma * 1000 )) > $P/input_current_limit
+	echo "输入限流 -> $(( $(ri $P/input_current_limit) / 1000 )) mA"
+	echo "注意：拔插后 APSD 会重跑并覆盖此值。"
+	[ "$ma" -gt 500 ] && [ "$(r $P/usb_type)" != "${_x:-}" ] && \
+		echo "      供电端必须撑得住，否则 VBUS 会塌。电脑 USB2 口只有 500 mA。"
+}
+
+usage() {
+	cat <<'H'
+usbpwr — Mi 5s (capricorn) USB 模式与充电状态工具
+
+用法:
+  usbpwr [status]            显示完整状态（默认）
+  usbpwr watch [秒]          持续刷新，默认 5 秒，Ctrl-C 退出
+  usbpwr mode <角色>         切换 USB 数据角色
+  usbpwr -f mode <角色>      强制切换，跳过充电器检查
+  usbpwr limit <mA>          设置输入限流，上限 3000
+  usbpwr 5v2a                预设：输入限流 2000 mA
+  usbpwr help                显示本帮助
+
+角色:
+  device    作为 USB 设备（gadget），默认状态，可充电
+  host      作为 USB 主机（OTG），对外供电，无法同时充电
+  otg       交给 extcon 按 CC 检测自动决定
+
+状态输出说明:
+  数据角色   dwc3 实际运行的模式
+  物理连接   直接读 TUSB320L 寄存器，可区分未连接/DFP/UFP/配件
+  电流       统一显示绝对值，标注「充入」或「放出」
+
+注意:
+  · 充电电压固定 5V，本机无 USB PD，「5V2A」只能调限流不能调压
+  · 限流值在拔插后会被 APSD 重新检测覆盖，不持久
+  · 充电器插着时切 host 会导致 APSD 卡死，需物理拔插恢复，故默认拒绝
+  · 角色由 TUSB320L 的 CC 检测接管，手动切 host 需接合规 OTG 头
+    （单条 CC 上 5.1kΩ Rd；两条 CC 都接地的廉价头会被认成音频配件）
+
+依赖:
+  i2c-tools    仅「物理连接」一行需要，缺失时降级显示，其余功能不受影响
+               安装: sudo apt install i2c-tools
+H
+}
+
+case "${1:-status}" in
+	status|"")	status ;;
+	watch)		while true; do clear; date '+%H:%M:%S'; status; sleep "${2:-5}"; done ;;
+	mode)		[ $# -ge 2 ] || { echo "用法: usbpwr mode <host|device|otg>" >&2; exit 1; }
+			set_mode "$2" ;;
+	-f)		FORCE=1; shift; [ "${1:-}" = mode ] && shift; set_mode "${1:-host}" ;;
+	limit)		[ $# -ge 2 ] || { echo "用法: usbpwr limit <mA>" >&2; exit 1; }
+			set_limit "$2" ;;
+	5v2a)		set_limit 2000 ;;
+	help|-h|--help)	usage ;;
+	*)		echo "未知参数: $1" >&2; echo >&2; usage >&2; exit 1 ;;
+esac

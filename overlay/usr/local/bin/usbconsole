@@ -1,0 +1,46 @@
+#!/bin/bash
+# usbconsole on|off|force|status —— 手动管理 USB 串口 console (ttyGS0)
+#
+# 为什么不开机自启：systemd 257 的回归（upstream #37854）——
+# systemd-executor 给服务设置 TTY 时会对 /dev/console 加排他 flock，
+# 而为 ttyGS0 建立 stdin 时若没有 USB 主机连接就会一直阻塞，锁不释放，
+# 导致 getty@tty1 乃至 PID 1 全部死等，屏幕上没有 shell。
+#
+# 配套的 drop-in 给该 unit 加了 ConditionPathExists=/run/usbconsole.enable，
+# 所以即使构建时 enable 了它，开机也不会启动；只有本脚本创建该标志后才会跑。
+set -u
+U=serial-getty@ttyGS0
+FLAG=/run/usbconsole.enable
+SUDO=""; [ "$(id -u)" -eq 0 ] || SUDO=sudo
+
+case "${1:-status}" in
+on)
+    on=$(cat /sys/class/power_supply/qcom-smbchg-usb/online 2>/dev/null)
+    if [ "$on" != 1 ]; then
+        echo "拒绝：USB 未接入 (online=$on)。没有主机时启动会触发死锁。" >&2
+        echo "确实要试请用: usbconsole force" >&2
+        exit 1
+    fi
+    $SUDO touch "$FLAG"
+    $SUDO systemctl start $U && echo "USB console 已开启 -> /dev/ttyGS0" ;;
+force)
+    $SUDO touch "$FLAG"
+    $SUDO systemctl start $U && echo "已强制开启（自担风险）" ;;
+off)
+    $SUDO rm -f "$FLAG"
+    $SUDO systemctl stop $U 2>/dev/null
+    for p in /proc/[0-9]*; do
+        case "$(readlink "$p/fd/0" 2>/dev/null)" in
+            *ttyGS0*) $SUDO kill -9 "${p#/proc/}" 2>/dev/null ;;
+        esac
+    done
+    echo "USB console 已关闭" ;;
+status)
+    printf 'unit:     %s / %s\n' "$(systemctl is-active $U 2>&1)" "$(systemctl is-enabled $U 2>&1)"
+    printf 'flag:     %s\n' "$([ -e "$FLAG" ] && echo 已设置 || echo 未设置)"
+    printf 'ttyGS0:   %s\n' "$([ -e /dev/ttyGS0 ] && echo 存在 || echo 无)"
+    printf 'USB:      online=%s type=%s\n' \
+        "$(cat /sys/class/power_supply/qcom-smbchg-usb/online 2>/dev/null)" \
+        "$(cat /sys/class/power_supply/qcom-smbchg-usb/usb_type 2>/dev/null)" ;;
+*) echo "用法: usbconsole [on|off|force|status]" >&2; exit 1 ;;
+esac
