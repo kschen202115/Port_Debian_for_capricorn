@@ -1,0 +1,138 @@
+# 一键：先跑 build-rootfs，成功后再跑 mi5s。
+#
+# 不改动这两个 workflow 的任何内容 —— 通过 API 触发它们的 workflow_dispatch
+# 再轮询等待结果。用内置的 GITHUB_TOKEN 即可，不需要 PAT：
+# 文档明确 workflow_dispatch / repository_dispatch 是「GITHUB_TOKEN 触发的事件
+# 不会创建新 workflow run」这条规则的例外。
+#
+# 唯一的前提是 GITHUB_TOKEN 需要 actions: write（下面已声明）。
+name: 一键构建（rootfs → 内核 → boot.img）
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_repo:
+        description: "Kernel repository URL"
+        required: true
+        default: "https://gitlab.com/msm8996-mainline/linux.git"
+      kernel_branch:
+        description: "Kernel branch"
+        required: true
+        default: "msm8996-stable-6.19.y"
+      device_code:
+        description: "Device codename"
+        required: true
+        default: "capricorn"
+      apply_cjktty_patch:
+        description: "Apply CJKTTY 6.19 patches"
+        required: true
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+      add_firmware:
+        description: "Add firmware to the build"
+        required: true
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+      use_clang:
+        description: "Use Clang as the compiler"
+        required: true
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+      skip_rootfs:
+        description: "跳过 rootfs 构建，直接用现有的固定入口（只重编内核时选 true）"
+        required: true
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+permissions:
+  actions: write      # 触发别的 workflow 的 workflow_dispatch 需要
+  contents: read
+
+jobs:
+  chain:
+    runs-on: ubuntu-latest
+    # rootfs 的 debootstrap 加上内核编译，给足余量
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      REF: ${{ github.ref_name }}
+
+    steps:
+      - name: 准备等待函数
+        run: |
+          set -euo pipefail
+          # 写成脚本文件，后面两步共用；避免在 YAML 里重复一大段 shell
+          cat > "$RUNNER_TEMP/run_and_wait.sh" <<'SH'
+          #!/usr/bin/env bash
+          # run_and_wait <workflow 文件名> [gh workflow run 的额外参数...]
+          set -euo pipefail
+          wf="$1"; shift
+
+          # 记录触发前的时间戳，用它筛出「本次」产生的 run。
+          # 不能只取最新一条 —— 并发触发时会认错。
+          before=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "::group::触发 $wf"
+          gh workflow run "$wf" --ref "$REF" "$@"
+          echo "::endgroup::"
+
+          # dispatch 是异步的，run 不会立刻出现，轮询最多 2 分钟
+          id=""
+          for _ in $(seq 1 24); do
+            sleep 5
+            id=$(gh run list --workflow "$wf" --branch "$REF" --limit 20 \
+                 --json databaseId,createdAt \
+                 --jq "[.[] | select(.createdAt >= \"$before\")]
+                       | sort_by(.createdAt) | last | .databaseId // empty")
+            [ -n "$id" ] && break
+          done
+
+          if [ -z "$id" ]; then
+            echo "::error::触发 $wf 后 2 分钟内没有出现新的 run"
+            echo "常见原因：仓库设置里 Workflow permissions 是只读，"
+            echo "或该 workflow 在当前分支上不存在 workflow_dispatch 触发器。"
+            exit 1
+          fi
+
+          url="https://github.com/$GH_REPO/actions/runs/$id"
+          echo "::notice::$wf -> run $id"
+          echo "$url"
+          echo "- [$wf]($url)" >> "$GITHUB_STEP_SUMMARY"
+
+          # --exit-status：失败时以非零码退出，让本 job 一起失败
+          gh run watch "$id" --exit-status
+          SH
+          chmod +x "$RUNNER_TEMP/run_and_wait.sh"
+
+      - name: 1/2 构建 rootfs
+        if: inputs.skip_rootfs != 'true'
+        run: "$RUNNER_TEMP/run_and_wait.sh build-rootfs.yml"
+
+      - name: 跳过 rootfs 的说明
+        if: inputs.skip_rootfs == 'true'
+        run: |
+          echo "::notice::已跳过 rootfs 构建，mi5s 将使用固定入口上的现有底包"
+          echo "- 跳过 rootfs 构建" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 2/2 编译内核并打包 boot.img
+        run: |
+          "$RUNNER_TEMP/run_and_wait.sh" mi5s.yml \
+            -f kernel_repo='${{ inputs.kernel_repo }}' \
+            -f kernel_branch='${{ inputs.kernel_branch }}' \
+            -f device_code='${{ inputs.device_code }}' \
+            -f apply_cjktty_patch='${{ inputs.apply_cjktty_patch }}' \
+            -f add_firmware='${{ inputs.add_firmware }}' \
+            -f use_clang='${{ inputs.use_clang }}' \
+            -f rootfs_url="https://github.com/$GH_REPO/releases/download/ARM64_Debian_RootFS/rootfs.zip"
+
+      - name: 汇总
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "两个子流程各自发布了 Release，产物在那边取。"
+          } >> "$GITHUB_STEP_SUMMARY"
