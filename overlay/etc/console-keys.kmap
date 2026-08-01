@@ -1,0 +1,21 @@
+# /etc/console-keys.kmap
+#
+# 把 Mi 5s 的三个硬件键从控制台键表里摘掉，交给 hkdm 独占。
+#
+#   114 = KEY_VOLUMEDOWN   原 F14
+#   115 = KEY_VOLUMEUP     原 Help
+#   116 = KEY_POWER        原 Do
+#
+# 不写 plain 前缀 —— loadkeys 会把所有修饰键组合(Shift/Ctrl/Alt/...)
+# 一并填成 VoidSymbol，正是要的效果。
+#
+# 影响范围：
+#   * 只作用于 VT(tty1~tty6)。SSH 的 pts 完全不受影响。
+#   * 不影响 hkdm —— 它直接读 /dev/input/event*，不经过键表。
+#   * 不影响 logind 长按 POWER 关机 —— 那个走 evdev 的 power-switch 标签。
+#
+# 这是个部分键表，loadkeys 会合并进当前键表，不会重置其它键。
+
+keycode 114 = VoidSymbol
+keycode 115 = VoidSymbol
+keycode 116 = VoidSymbol
