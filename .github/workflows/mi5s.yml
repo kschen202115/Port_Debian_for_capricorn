@@ -254,6 +254,8 @@ jobs:
           name: ${{ steps.release_tag.outputs.tag }}
           artifacts: /workdir/*
           allowUpdates: false
+          makeLatest: true
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
             This is boot.img and rootfs.img(in the root.zip) for ${{ inputs.device_code }}
+            Base rootfs url ${{ inputs.rootfs_url }}
