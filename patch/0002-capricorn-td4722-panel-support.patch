@@ -50,8 +50,7 @@ diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts b/arch/arm
  &pmi8994_wled {
  	status = "okay";
 +
-+	interrupts = <0x3 0xd8 0x0 IRQ_TYPE_EDGE_RISING>,
-+		     <0x3 0xd8 0x2 IRQ_TYPE_EDGE_RISING>;
++	interrupts = <0x3 0xd8 0x2 IRQ_TYPE_EDGE_RISING>;
 +	interrupt-names = "short";
 +
 +	qcom,current-boost-limit = <970>;
@@ -263,8 +262,7 @@ index 0000000..c3862aa
 +
 +	dsi->lanes = 4;
 +	dsi->format = MIPI_DSI_FMT_RGB888;
-+	dsi->mode_flags = MIPI_DSI_MODE_VIDEO_BURST |
-+			  MIPI_DSI_CLOCK_NON_CONTINUOUS;
++	dsi->mode_flags = MIPI_DSI_MODE_VIDEO_BURST;
 +	ctx->panel.prepare_prev_first = true;
 +
 +	ret = drm_panel_of_backlight(&ctx->panel);
