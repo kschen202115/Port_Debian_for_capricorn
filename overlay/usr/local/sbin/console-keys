@@ -1,0 +1,38 @@
+#!/bin/bash
+# console-keys - 让 hkdm 永久接管 VOL+ / VOL- / POWER
+#
+# 把这三个键在控制台键表里设为 VoidSymbol，这样 VT 键盘层不再往
+# tty1 的前台进程送任何东西，避免「hkdm 执行动作」和「shell 收到字符」
+# 同时发生的双重触发。
+#
+# 幂等，可以反复跑。
+
+set -uo pipefail
+
+KMAP=${1:-/etc/console-keys.kmap}
+KEYS='114|115|116'
+OLD='Help|Do|F14'
+
+[ "$(id -u)" -eq 0 ] || { echo "console-keys: 需要 root" >&2; exit 1; }
+[ -r "$KMAP" ]       || { echo "console-keys: 找不到 $KMAP" >&2; exit 1; }
+# 没有 VT 就没什么可做的
+[ -c /dev/tty0 ]     || { echo "console-keys: 无 /dev/tty0，跳过"; exit 0; }
+
+command -v loadkeys >/dev/null || { echo "console-keys: 缺 kbd 包(loadkeys)" >&2; exit 1; }
+
+loadkeys "$KMAP" >/dev/null 2>&1 \
+    || { echo "console-keys: loadkeys 失败" >&2; exit 1; }
+
+# 断言生效。键表是全局的，谁后跑谁说了算 ——
+# 如果 console-setup 排在我们后面，这里就会抓到旧 keysym。
+cur=$(dumpkeys 2>/dev/null | grep -E "^keycode +($KEYS) +=" || true)
+if printf '%s\n' "$cur" | grep -qE "\b($OLD)\b"; then
+    echo "console-keys: 未生效，当前仍是:" >&2
+    printf '%s\n' "$cur" >&2
+    echo "console-keys: 确认本单元排在 console-setup.service 之后" >&2
+    exit 1
+fi
+
+echo "console-keys: 已接管 keycode 114/115/116"
+[ -n "$cur" ] && printf '%s\n' "$cur"
+exit 0
