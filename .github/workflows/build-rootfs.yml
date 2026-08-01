@@ -221,7 +221,7 @@ jobs:
           name: Debian ${{ env.DEBVER }} (${{ env.SUITE }}) — ${{ env.BUILD_STAMP }}
           artifacts: ${{ env.ARTIFACT }}
           allowUpdates: true
-          makeLatest: true
+          makeLatest: false
           commit: ${{ github.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
@@ -243,7 +243,6 @@ jobs:
       # 资产名必须是固定的 rootfs.zip —— 带版本号的文件名会让直链每次构建都变，
       # 那就失去「固定入口」的意义了。
       # removeArtifacts 必须开，不清旧的会越堆越多。
-      # makeLatest 设 false，让上面那个带版本的 Release 保住 Latest 徽章。
       - name: 更新 latest 固定入口
         uses: ncipollo/release-action@v1
         with:
@@ -252,7 +251,7 @@ jobs:
           artifacts: rootfs.zip
           allowUpdates: true
           removeArtifacts: true
-          makeLatest: false
+          makeLatest: true
           commit: ${{ github.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
