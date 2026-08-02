@@ -25,6 +25,7 @@ screen_off() {
         read -r b < "$BL/brightness"
         [ "$b" -gt 0 ] && echo "$b" > "$SAVED"     # 记住亮度，开屏时还原
     fi
+    systemctl --no-block stop buffyboard
     echo 4 > "$BLANK"                              # FB_BLANK_POWERDOWN
 }
 
