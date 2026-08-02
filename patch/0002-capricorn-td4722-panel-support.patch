@@ -318,7 +318,7 @@ new file mode 100644
 index 0000000..65e955e
 --- /dev/null
 +++ b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn-td4722.dts
-@@ -0,0 +1,11 @@
+@@ -0,0 +1,16 @@
 +// SPDX-License-Identifier: BSD-3-Clause
 +/*
 + * Xiaomi Mi 5s variants fitted with the LGD TD4722 DSI panel.
@@ -330,3 +330,8 @@ index 0000000..65e955e
 +
 +#define CAPRICORN_TD4722_PANEL
 +#include "msm8996pro-xiaomi-capricorn.dts"
++
++/* BM36 标称 3200 mAh；上游 capricorn.dts 里的 4070 mAh 是错的 */
++&battery {
++	charge-full-design-microamp-hours = <3200000>;
++};
