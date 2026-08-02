@@ -1,17 +1,43 @@
 #!/bin/bash
 # screenctl on|off|toggle|status —— 屏幕开关
 #
-# 关屏用 fbcon 的 blank 接口（DRM fbdev 模拟会把它转成 DPMS off），
-# 真正下电面板：panel unprepare -> display off + enter sleep + reset 拉低，
-# 同时 drm_panel_disable 会一并关掉背光。
+# 关屏 = 真正下电面板：fb0/blank 写 FB_BLANK_POWERDOWN，DRM fbdev 模拟转成
+# DPMS off -> panel unprepare（display off + 进 sleep + reset 拉低），
+# 背光由 drm_panel_disable 一并关掉。
 #
-# 对比原来只把 backlight 写 0：那样 DSI 控制器和面板仍在持续刷像素，
-# 只是不发光，省的电有限。
+# 关屏时还要额外处理两件事，否则会持续刷内核报错：
 #
-# /sys/class/drm/card0-DSI-1/dpms 在本机是只读的，所以只能走 fb0/blank。
+# 1) fbcon —— fb 被 blank 之后 fbcon 会自己再画一遍黑屏，提交打到已经
+#    active=0 的 CRTC 上，msm_mdp 每次等 pp done 超时 56ms 并打一条
+#    "pp done time out, lm=2"，约 0.4 次/秒。而且它会把 blank 从 4 改回 1。
+#    实测：解绑 vtcon 后 12 秒内报错从 5 次降到 1 次，blank 稳定保持 4。
+#
+# ── 曾经试过、但必须避免的做法 ────────────────────────────
+# 不要在关屏时 unbind rmi4 触摸屏驱动。
+#
+# 动机是合理的：TD4722 是 Synaptics TDDI，触控和显示驱动 IC 是同一颗芯片，
+# 面板 reset 拉低时触控那半边一起断电，rmi4 驱动不知情还在往没电的芯片发
+# I2C，产生 "Failed to read irqs, code=-6/-110"，irq/NN-rmi4_i2c 卡 D 状态。
+#
+# 但 unbind 会销毁 /dev/input/eventN，而 hkdm 一直开着那个 fd。失效的 fd
+# 让它的 poll 循环空转（实测持续占用 20% 一个核），按键处理被拖死 ——
+# 表现就是音量键突然失灵。/proc/PID/fd 里能看到 "event2 (deleted)"。
+#
+# 代价对比：unbind 换来的只是每次关屏少 5 条日志，却弄坏了硬件按键。不值。
+# 真要根治得在驱动侧用 drm_panel_follower，那要改上游 rmi_i2c.c。
 set -u
+
 BLANK=/sys/class/graphics/fb0/blank
 SAVED=/run/screenctl.brightness
+
+# fbcon 对应的 vtcon 编号不固定，按名字找
+FBCON=""
+for v in /sys/class/vtconsole/vtcon*; do
+    case "$(cat "$v/name" 2>/dev/null)" in
+        *"frame buffer"*) FBCON="$v/bind"; break ;;
+    esac
+done
+
 BL=""
 for d in /sys/class/backlight/*/; do [ -r "$d/brightness" ] && { BL=$d; break; }; done
 
@@ -20,22 +46,46 @@ for d in /sys/class/backlight/*/; do [ -r "$d/brightness" ] && { BL=$d; break; }
 
 read -r cur < "$BLANK"
 
+# 全部做成幂等 + 不阻塞，任何一步失败都不能拖死电源键
+fbcon_off() { [ -n "$FBCON" ] && [ "$(cat "$FBCON")" = 1 ] && echo 0 > "$FBCON" 2>/dev/null; return 0; }
+
+# 重绑 fbcon 之后必须重新应用字体：fbcon 重新接管 fb 时会退回内置的
+# 8x16 默认字体（dmesg 里那条 "switching to colour frame buffer device
+# 135x120"），而 console-setup 配的是 VGA 16x32（67 列 x 60 行）。
+# 不恢复的话表现就是「关一次屏再开，字全变小了」。
+# setupcon --font-only 实测 185ms，只在确实发生了重绑时才跑。
+fbcon_on() {
+    [ -n "$FBCON" ] || return 0
+    [ "$(cat "$FBCON")" = 0 ] || return 0          # 本来就绑着，不用动
+    echo 1 > "$FBCON" 2>/dev/null
+    command -v setupcon >/dev/null 2>&1 && \
+        timeout 5 setupcon --force --font-only >/dev/null 2>&1
+    return 0
+}
+
 screen_off() {
     if [ -n "$BL" ]; then
         read -r b < "$BL/brightness"
         [ "$b" -gt 0 ] && echo "$b" > "$SAVED"     # 记住亮度，开屏时还原
     fi
-    systemctl --no-block stop buffyboard
+    systemctl --no-block stop buffyboard 2>/dev/null
+    fbcon_off                                      # fbcon 摘掉，别再往 fb 上画
     echo 4 > "$BLANK"                              # FB_BLANK_POWERDOWN
 }
 
 screen_on() {
-    echo 0 > "$BLANK"                              # FB_BLANK_UNBLANK
+    echo 0 > "$BLANK"                              # 面板先起来
+    fbcon_on                                       # fbcon 挂回 + 恢复字体
     if [ -n "$BL" ]; then
-        local want=0
+        local want=0 max=0
         [ -r "$SAVED" ] && read -r want < "$SAVED"
-        if [ "${want:-0}" -le 0 ]; then            # 没有记录过就给满亮度
-            read -r want < "$BL/max_brightness"
+        if [ "${want:-0}" -le 0 ]; then
+            # 没有记录时**不要**给满亮度。$SAVED 在 /run（tmpfs），每次重启
+            # 都会清空，所以「没记录」在开机后是常态，给满就等于每次开机
+            # 第一次亮屏都是 100%。实测满背光把放电电流从 378 mA 推到
+            # 744 mA，而且 LCD 的 LED 灯条在下边缘，那一条会明显发烫。
+            read -r max < "$BL/max_brightness"
+            want=$(( max / 3 ))
         fi
         echo "$want" > "$BL/brightness"
     fi
@@ -49,6 +99,8 @@ status)
     printf 'blank:      %s (%s)\n' "$cur" "$([ "$cur" = 0 ] && echo on || echo off)"
     printf 'dpms:       %s\n' "$(cat /sys/class/drm/card0-DSI-1/dpms 2>/dev/null)"
     [ -n "$BL" ] && printf 'brightness: %s / %s\n' "$(cat $BL/brightness)" "$(cat $BL/max_brightness)"
-    [ -r "$SAVED" ] && printf 'saved:      %s\n' "$(cat $SAVED)" ;;
+    [ -r "$SAVED" ] && printf 'saved bl:   %s\n' "$(cat $SAVED)"
+    printf 'fbcon:      %s\n' "$([ -n "$FBCON" ] && cat "$FBCON" || echo '(未找到)')"
+    printf 'console:    %s\n' "$(stty size < /dev/tty1 2>/dev/null | awk '{print $1"行 x "$2"列"}')" ;;
 *) echo "用法: screenctl [on|off|toggle|status]" >&2; exit 1 ;;
 esac
