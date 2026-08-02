@@ -63,7 +63,7 @@ apt-get install -y --no-install-recommends \
     network-manager wpasupplicant wireless-regdb rfkill iw \
     libpam-systemd \
     systemd-timesyncd \
-    htop kmod usbutils fdisk \
+    htop kmod usbutils i2c-tools fdisk \
     make zram-tools git \
     libevdev2 libinput10 libxkbcommon0 \
     initramfs-tools busybox \
