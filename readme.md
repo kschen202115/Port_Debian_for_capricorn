@@ -52,18 +52,7 @@ fastboot flash boot boot.img
 fastboot flash userdata rootfs.img
 ```
 
-### 首次启动必做
-
-**默认账户 `kschen`，密码 `1`。**（自用移植，建议第一时间改掉。）
-
-```bash
-# 1. 扩容 —— 不做的话可用空间只有 5G
-sudo resize2fs /dev/<你的 userdata 分区>
-
-# 2. 校时 —— 时间不对会导致 apt update / 安装软件失败
-sudo apt install ntpdate
-sudo ntpdate cn.pool.ntp.org
-```
+### 重要提醒
 
 镜像极度精简，很多基本软件都没有。想要更完整的环境，强烈建议自己去 mobian / Kali / Ubuntu 官网拿 rootfs，用 `rootfs_url` 替换。
 
