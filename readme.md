@@ -82,7 +82,7 @@ cat /sys/class/graphics/fbcon/font_name
 ### 其他
 
 - **串口登录**：内核已支持，通过 USB gadget serial（`/dev/ttyGS0`）。注意 `serial-getty@ttyGS0` 默认不自启，见 [第七节](#七移植记录与踩坑)。
-- **USB**：Type-C 口只有 USB 2.0，且**没有 PD 控制器**（TUSB320L 只做 CC 逻辑）。因此不能一边充电一边接外设，除非用带独立供电的 Y 型转接方案。
+- **USB**：Type-C 口只有 USB 2.0，且**没有 PD 控制器**（TUSB320L 只做 CC 逻辑）。因此不能一边充电一边接外设，除非用带独立供电的 Y 型转接方案，或者手动拉高充电电流，屏上菜单中提供了按键操作，或者使用usbpwr命令管理usb工作情况
 
 ---
 
