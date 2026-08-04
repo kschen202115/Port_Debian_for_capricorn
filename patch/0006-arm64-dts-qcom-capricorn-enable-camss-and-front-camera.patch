@@ -31,21 +31,12 @@ Subject: [PATCH 6/6] arm64: dts: qcom: msm8996pro-xiaomi-capricorn: enable
 2. lane 数。ov4689.c 里 OV4689_LANES 硬编码为 4，num_data_lanes 不等于 4
    直接 probe 失败。下游没给这个信息。
 3. avdd 电压。下游要 2.8 V，但 capricorn.dts 现有的 vreg_l29a_2p7 是
-   2.7 V 固定。OV4688 的 avdd 规格是 2.6-3.0 V，2.7 应该能跑，但如果
-   出图异常先考虑把 l29 的 min/max 改成 2800000。
-
-后摄 Sony IMX378 没有加进来 —— mainline 至今没有 IMX378 驱动 (2020 年有
-过一版 RFC，没合入)，树里的 imx412.c 只认 sony,imx412 / sony,imx577，
-imx318.c 只认 sony,imx318。所以 CSIPHY0 这一路先空着。
-
-Signed-off-by: kschen <admin@kschen.eu.org>
----
 diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
-index 33678b3..48b05d3 100755
+index ce43b7d..f2b2a71 100644
 --- a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
 +++ b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
-@@ -116,6 +116,67 @@
-         firmware-name = "qcom/msm8996/natrium/venus.mbn";
+@@ -121,6 +121,67 @@
+         };
  };
  
 +&camss {
@@ -109,10 +100,10 @@ index 33678b3..48b05d3 100755
 +	};
 +};
 +
- &gpu {
-         zap-shader {
-                 firmware-name = "qcom/msm8996/capricorn/a530_zap.mbn";
-@@ -216,6 +277,22 @@
+ &rpm_requests {
+ 	pm8994-regulators {
+ 		vreg_l3a_0p875: l3 {
+@@ -215,6 +276,22 @@
  };
  
  &tlmm {
