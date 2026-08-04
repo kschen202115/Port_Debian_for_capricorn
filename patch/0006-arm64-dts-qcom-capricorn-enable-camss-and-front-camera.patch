@@ -1,0 +1,140 @@
+From: kschen <admin@kschen.eu.org>
+Date: Tue, 4 Aug 2026 21:20:00 +0800
+Subject: [PATCH 6/6] arm64: dts: qcom: msm8996pro-xiaomi-capricorn: enable
+ camss and front camera
+
+*** 实验性，未在硬件上验证过 ***
+
+前摄是 OmniVision OV4688。虽然 mainline 里没有叫 ov4689 以外名字的驱动，
+但 drivers/media/i2c/ov4689.c 里:
+
+	#define OV4689_REG_CHIP_ID	CCI_REG16(0x300a)
+	#define CHIP_ID			0x004688
+
+也就是说现成的 ov4689 驱动匹配的就是这颗芯片，不需要写新驱动。
+
+接线全部来自下游 boot.img 里的 DTB (qcom,camera@2):
+  cci-master 1, csiphy-sd-index 2, sensor-position 1 (front)
+  MCLK2    = TLMM gpio 15 @ 24 MHz  (0x16E3600)
+  RESET2   = TLMM gpio 23
+  STANDBY2 = TLMM gpio 26
+  cam_vdig = ldoa27 -> vreg_l27a_1p2  (1.2 V)  -> dvdd
+  cam_vio  = vsa1   -> vreg_lvs1a_1p8 (1.8 V)  -> dovdd
+  cam_vana = ldoa29 -> vreg_l29a_2p7           -> avdd
+
+需要 CONFIG_VIDEO_OV4689=m (当前 config 里是 not set)。
+
+需要实机确认的三点:
+1. i2c 从地址。下游把 slave-addr 放在用户态 HAL blob 里，DTB 只有 EEPROM
+   的 0xA0。这里按 OmniVision 惯例填了 0x36，probe 不到就用 i2cdetect 在
+   cci_i2c1 上扫一遍。
+2. lane 数。ov4689.c 里 OV4689_LANES 硬编码为 4，num_data_lanes 不等于 4
+   直接 probe 失败。下游没给这个信息。
+3. avdd 电压。下游要 2.8 V，但 capricorn.dts 现有的 vreg_l29a_2p7 是
+   2.7 V 固定。OV4688 的 avdd 规格是 2.6-3.0 V，2.7 应该能跑，但如果
+   出图异常先考虑把 l29 的 min/max 改成 2800000。
+
+后摄 Sony IMX378 没有加进来 —— mainline 至今没有 IMX378 驱动 (2020 年有
+过一版 RFC，没合入)，树里的 imx412.c 只认 sony,imx412 / sony,imx577，
+imx318.c 只认 sony,imx318。所以 CSIPHY0 这一路先空着。
+
+Signed-off-by: kschen <admin@kschen.eu.org>
+---
+diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
+index 33678b3..48b05d3 100755
+--- a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
++++ b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
+@@ -116,6 +116,67 @@
+         firmware-name = "qcom/msm8996/natrium/venus.mbn";
+ };
+ 
++&camss {
++	status = "okay";
++
++	vdda-supply = <&vreg_l2a_1p25>;
++
++	ports {
++		/* CSIPHY2 <- front camera */
++		port@2 {
++			reg = <2>;
++			csiphy2_ep: endpoint {
++				clock-lanes = <7>;
++				data-lanes = <0 1 2 3>;
++				remote-endpoint = <&ov4689_ep>;
++			};
++		};
++	};
++};
++
++&cci {
++	status = "okay";
++};
++
++&cci_i2c1 {
++	clock-frequency = <1000000>;
++
++	/*
++	 * Front camera.  The sensor is marketed as OV4688, but its chip id
++	 * register reads 0x4688 - which is exactly what the in-tree ov4689
++	 * driver matches on - so the existing driver covers it.
++	 */
++	camera-sensor@36 {
++		compatible = "ovti,ov4689";
++		reg = <0x36>;
++
++		avdd-supply = <&vreg_l29a_2p7>;
++		dovdd-supply = <&vreg_lvs1a_1p8>;
++		dvdd-supply = <&vreg_l27a_1p2>;
++
++		reset-gpios = <&tlmm 23 GPIO_ACTIVE_LOW>;
++		pwdn-gpios = <&tlmm 26 GPIO_ACTIVE_LOW>;
++
++		clocks = <&mmcc CAMSS_MCLK2_CLK>;
++		assigned-clocks = <&mmcc CAMSS_MCLK2_CLK>;
++		assigned-clock-rates = <24000000>;
++
++		pinctrl-names = "default";
++		pinctrl-0 = <&cam2_default>;
++
++		orientation = <0>;
++		rotation = <90>;
++
++		port {
++			ov4689_ep: endpoint {
++				data-lanes = <0 1 2 3>;
++				link-frequencies = /bits/ 64 <504000000>;
++				remote-endpoint = <&csiphy2_ep>;
++			};
++		};
++	};
++};
++
+ &gpu {
+         zap-shader {
+                 firmware-name = "qcom/msm8996/capricorn/a530_zap.mbn";
+@@ -216,6 +277,22 @@
+ };
+ 
+ &tlmm {
++	cam2_default: cam2-default-state {
++		mclk-pins {
++			pins = "gpio15";
++			function = "cam_mclk";
++			drive-strength = <16>;
++			bias-disable;
++		};
++
++		ctrl-pins {
++			pins = "gpio23", "gpio26";
++			function = "gpio";
++			drive-strength = <2>;
++			bias-disable;
++		};
++	};
++
+ 	gpio-line-names =
+ 		"ESE_SPI_MOSI",		/* GPIO_0   */
+ 		"ESE_SPI_MISO",		/* GPIO_1   */
+-- 
+2.34.1
+
