@@ -32,7 +32,7 @@ Subject: [PATCH 6/6] arm64: dts: qcom: msm8996pro-xiaomi-capricorn: enable
    直接 probe 失败。下游没给这个信息。
 3. avdd 电压。下游要 2.8 V，但 capricorn.dts 现有的 vreg_l29a_2p7 是
 diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
-index ce43b7d..f2b2a71 100644
+index ce43b7d..e75e114 100644
 --- a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
 +++ b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
 @@ -121,6 +121,67 @@
@@ -103,10 +103,10 @@ index ce43b7d..f2b2a71 100644
  &rpm_requests {
  	pm8994-regulators {
  		vreg_l3a_0p875: l3 {
-@@ -215,6 +276,22 @@
- };
+@@ -367,6 +428,22 @@
+ 		"RFFE1_DATA",		/* GPIO_148 */
+ 		"RFFE1_CLK";		/* GPIO_149 */
  
- &tlmm {
 +	cam2_default: cam2-default-state {
 +		mclk-pins {
 +			pins = "gpio15";
@@ -123,9 +123,8 @@ index ce43b7d..f2b2a71 100644
 +		};
 +	};
 +
- 	gpio-line-names =
- 		"ESE_SPI_MOSI",		/* GPIO_0   */
- 		"ESE_SPI_MISO",		/* GPIO_1   */
+ 	touchscreen_default: touchscreen_default {
+ 		pins = "gpio89", "gpio125";
+ 		function = "gpio";
 -- 
 2.34.1
-
