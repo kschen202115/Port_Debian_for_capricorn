@@ -1,0 +1,160 @@
+From: kschen <admin@kschen.eu.org>
+Date: Tue, 5 Aug 2026 01:05:00 +0800
+Subject: [PATCH 7/7] arm64: dts: qcom: msm8996pro-xiaomi-capricorn: add rear
+ camera IMX378
+
+*** 目前是空转的：mainline 还没有能驱动它的 imx378 驱动 ***
+
+后摄是 Sony IMX378，挂在 CCI master 0 / CSIPHY0 上。
+
+接线来自下游 boot.img 的 DTB (qcom,camera@0)：
+  MCLK0    = TLMM gpio 13 @ 24 MHz
+  RESET0   = TLMM gpio 86
+  STANDBY0 = TLMM gpio 30
+  cam_vana = ldoa17 -> vreg_l17a_2p8  (2.8 V) -> VANA
+  cam_vdig = smpa3  -> vreg_s3a_1p3   (1.3 V) -> VDIG
+  cam_vio  = vsa1   -> vreg_lvs1a_1p8 (1.8 V) -> VDDL
+
+i2c 地址、lane 数、链路速率来自反汇编厂商 HAL blob
+libmmcamera_imx378.so 里的 sensor_slave_info 和寄存器初始化表：
+  slave_addr       0x20 (8-bit)      -> 7-bit 0x10
+  reg 0x0114       0x03              -> 4 data lanes (全部 6 个模式一致)
+  reg 0x0113       0x0a              -> RAW10
+  reg 0x0820-0823  4800 Mbps 总带宽  -> 1200 Mbps/lane -> link_freq 600 MHz
+
+供电名用大写 VANA/VDIG/VDDL，是为了对上 Raspberry Pi imx477 驱动里的
+imx477_supply_name[]。
+
+关于驱动：RPi 的 drivers/media/i2c/imx477.c 已经在 of_match 里认
+"sony,imx378"（IMX378_CHIP_ID 0x0378，靠 compatible_data.extra_regs 补
+几条寄存器）。把厂商 blob 的全分辨率模式表和 RPi 的 mode_4056x3040_regs
+做交集比对，42 个共有寄存器里 37 个值完全相同，只有 PLL_VT_MPY
+(0x0306/07: 350 vs 200) 和两条 Sony 内部时序 (0x3c02, 0x3f56/57) 不同。
+两颗传感器的像素阵列都是 4056x3040。
+
+但该驱动把 MIPI lane 数写死成 2：
+
+	if (ep_cfg.bus.mipi_csi2.num_data_lanes != 2) {
+		dev_err(dev, "only 2 data lanes are currently supported\n");
+
+所以移植时至少要改：放开 lane 检查、让 IMX477_IOP_SYSCK_DIV 可配
+(capricorn 高速模式要 0x01 而非 0x02)、link-frequency 换算、以及把上面
+那 5 条寄存器差异塞进 extra_regs。
+
+STANDBY0 (gpio 30) 由 pinctrl 直接拉低，驱动侧不管它。
+
+对焦马达 (下游 qcom,actuator@0，L23 供电 2.8 V，同在 CCI master 0)
+暂未加入，型号未知，需要传感器上电后扫 i2c 确认。
+
+Signed-off-by: kschen <admin@kschen.eu.org>
+---
+diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
+index e75e114..fce20e3 100644
+--- a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
++++ b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
+@@ -127,6 +127,16 @@
+ 	vdda-supply = <&vreg_l2a_1p25>;
+ 
+ 	ports {
++		/* CSIPHY0 <- rear camera */
++		port@0 {
++			reg = <0>;
++			csiphy0_ep: endpoint {
++				clock-lanes = <7>;
++				data-lanes = <0 1 2 3>;
++				remote-endpoint = <&imx378_ep>;
++			};
++		};
++
+ 		/* CSIPHY2 <- front camera */
+ 		port@2 {
+ 			reg = <2>;
+@@ -143,6 +153,53 @@
+ 	status = "okay";
+ };
+ 
++&cci_i2c0 {
++	status = "okay";
++	clock-frequency = <400000>;
++
++	/*
++	 * Rear camera - Sony IMX378.
++	 * i2c address, lane count and link frequency all confirmed by
++	 * disassembling the vendor HAL blob libmmcamera_imx378.so:
++	 *   slave_addr        0x20 (8-bit) -> 0x10
++	 *   reg 0x0114        0x03         -> 4 data lanes
++	 *   reg 0x0113        0x0a         -> RAW10
++	 *   reg 0x0820..0823  4800 Mbps total -> 1200 Mbps/lane -> 600 MHz
++	 *
++	 * NOTE: mainline has no imx378 driver yet.  The Raspberry Pi imx477
++	 * driver already matches "sony,imx378", but hardcodes 2 data lanes,
++	 * so it needs porting before this node does anything.
++	 */
++	imx378: camera-sensor@10 {
++		compatible = "sony,imx378";
++		reg = <0x10>;
++
++		clocks = <&mmcc CAMSS_MCLK0_CLK>;
++		assigned-clocks = <&mmcc CAMSS_MCLK0_CLK>;
++		assigned-clock-rates = <24000000>;
++
++		VANA-supply = <&vreg_l17a_2p8>;		/* 2.8 V analog */
++		VDIG-supply = <&vreg_s3a_1p3>;		/* 1.3 V digital core */
++		VDDL-supply = <&vreg_lvs1a_1p8>;	/* 1.8 V interface */
++
++		reset-gpios = <&tlmm 86 GPIO_ACTIVE_LOW>;
++
++		pinctrl-names = "default";
++		pinctrl-0 = <&cam0_default>;
++
++		rotation = <90>;
++		orientation = <1>;			/* back */
++
++		port {
++			imx378_ep: endpoint {
++				data-lanes = <0 1 2 3>;
++				link-frequencies = /bits/ 64 <600000000>;
++				remote-endpoint = <&csiphy0_ep>;
++			};
++		};
++	};
++};
++
+ &cci_i2c1 {
+ 	clock-frequency = <1000000>;
+ 
+@@ -428,6 +485,31 @@
+ 		"RFFE1_DATA",		/* GPIO_148 */
+ 		"RFFE1_CLK";		/* GPIO_149 */
+ 
++	cam0_default: cam0-default-state {
++		mclk-pins {
++			pins = "gpio13";
++			function = "cam_mclk";
++			drive-strength = <16>;
++			bias-disable;
++		};
++
++		rst-pins {
++			pins = "gpio86";
++			function = "gpio";
++			drive-strength = <2>;
++			bias-disable;
++		};
++
++		/* CAM_STANDBY0 - held deasserted, the driver does not touch it */
++		standby-pins {
++			pins = "gpio30";
++			function = "gpio";
++			drive-strength = <2>;
++			bias-disable;
++			output-low;
++		};
++	};
++
+ 	cam2_default: cam2-default-state {
+ 		mclk-pins {
+ 			pins = "gpio15";
+-- 
+2.34.1
+
