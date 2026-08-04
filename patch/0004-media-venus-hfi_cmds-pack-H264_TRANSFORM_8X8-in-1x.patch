@@ -1,0 +1,54 @@
+From: kschen <admin@kschen.eu.org>
+Date: Tue, 4 Aug 2026 21:14:40 +0800
+Subject: [PATCH 4/5] media: venus: hfi_cmds: pack H264_TRANSFORM_8X8 in the 1x
+ packetizer
+
+venc_set_properties() sets HFI_PROPERTY_PARAM_VENC_H264_TRANSFORM_8X8
+(0x2005025) for every H.264 encode session, but that property is only
+handled by pkt_session_set_property_4xx()/_6xx().  On HFI_VERSION_1XX and
+HFI_VERSION_3XX the 3xx packetizer falls through to
+pkt_session_set_property_1x(), which has no case for it and hits
+"default: return -EINVAL".
+
+The error propagates back through venc_set_properties() into
+venc_queue_setup(), so VIDIOC_REQBUFS fails with -EINVAL and hardware
+H.264 encoding is unusable on every HFI 3XX SoC.  VP8, HEVC, MPEG4 and
+H263 encoding are unaffected because the property is only set inside the
+H.264 branch.
+
+Diagnosed on a Xiaomi Mi 5s (msm8996 pro, Venus hw 3.43.15, firmware
+VIDEO.VE.4.4-00040): ftrace function_graph on venc_queue_setup() shows the
+fifth hfi_session_set_property() call returning without ever reaching
+venus_iface_cmdq_write(), and disassembling venus-enc.ko confirms that
+call carries ptype 0x02005025.
+
+The packet layout is a single u32, identical to the 4xx one, so add the
+case to the 1x packetizer.  It goes before the "NOT IMPLEMENTED IN CORE
+YET" fallthrough list so that none of those labels get captured by it.
+
+Tested: 640x480 and 1280x720 H.264 High profile encode now produce valid
+streams; hardware decode and the other encoders are unchanged.
+
+Signed-off-by: kschen <admin@kschen.eu.org>
+---
+diff --git a/drivers/media/platform/qcom/venus/hfi_cmds.c b/drivers/media/platform/qcom/venus/hfi_cmds.c
+index 3ae0630..d691cc8 100755
+--- a/drivers/media/platform/qcom/venus/hfi_cmds.c
++++ b/drivers/media/platform/qcom/venus/hfi_cmds.c
+@@ -1064,6 +1064,13 @@ static int pkt_session_set_property_1x(struct hfi_session_set_property_pkt *pkt,
+ 		pkt->shdr.hdr.size += sizeof(u32) + sizeof(*info);
+ 		break;
+ 	}
++	case HFI_PROPERTY_PARAM_VENC_H264_TRANSFORM_8X8: {
++		struct hfi_h264_8x8_transform *in = pdata, *tm = prop_data;
++
++		tm->enable_type = in->enable_type;
++		pkt->shdr.hdr.size += sizeof(u32) + sizeof(*tm);
++		break;
++	}
+ 	case HFI_PROPERTY_PARAM_VENC_HDR10_PQ_SEI:
+ 		return -ENOTSUPP;
+ 
+-- 
+2.34.1
+

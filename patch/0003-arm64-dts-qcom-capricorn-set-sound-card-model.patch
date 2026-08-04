@@ -1,0 +1,42 @@
+From: kschen <admin@kschen.eu.org>
+Date: Tue, 4 Aug 2026 21:14:22 +0800
+Subject: [PATCH 3/5] arm64: dts: qcom: msm8996pro-xiaomi-capricorn: set sound
+ card model
+
+The "sound" node inherited from msm8996-xiaomi-common.dtsi has no "model"
+property, and capricorn - unlike gemini, natrium and scorpio - never
+overrides it.  qcom_snd_parse_of() leaves card->name NULL in that case and
+snd_soc_register_card() then bails out:
+
+  platform sound: deferred probe pending: msm-snd-apq8096: MultiMedia1: \
+      error getting cpu dai name
+  msm-snd-apq8096 sound: probe with driver msm-snd-apq8096 failed with error -22
+
+so the device comes up with no sound card at all ("No soundcards found").
+The deferred-probe message is just the normal EPROBE_DEFER while the APR
+DAIs are still coming up; the -EINVAL is the real failure.
+
+Add the missing model, matching the other three Xiaomi msm8996 boards.
+
+With this, card 0 registers with six playback and six capture PCMs and the
+full WCD9335 mixer control set.
+
+Signed-off-by: kschen <admin@kschen.eu.org>
+---
+ arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
+--- a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
++++ b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
+@@ -107,6 +107,10 @@
+         firmware-name = "qcom/msm8996/capricorn/slpi.mbn";
+ };
+ 
++&sound {
++	model = "capricorn";
++};
++
+ &venus {
+         firmware-name = "qcom/msm8996/capricorn/venus.mbn";
+ };
