@@ -1,0 +1,50 @@
+From: kschen <admin@kschen.eu.org>
+Date: Tue, 5 Aug 2026 21:40:00 +0800
+Subject: [PATCH 9/9] arm64: dts: qcom: msm8996pro-xiaomi-capricorn: fix RPM
+ regulators node name
+
+capricorn 把自己那一组 PM8994 RPM regulator 放在 &rpm_requests 下的
+"pm8994-regulators" 子节点里，但 msm8996-xiaomi-common.dtsi 用的节点名是
+"regulators-0"（带 compatible = "qcom,rpm-pm8994-regulators"）。
+"pm8994-regulators" 是个没有 compatible 的孤儿节点，没有任何驱动会去
+probe 它。
+
+后果是这六个 regulator 从来没有被注册过：
+
+  vreg_l3a_0p875  vreg_l11a_1p1  vreg_l17a_2p8
+  vreg_l18a_2p8   vreg_l22a_3p0  vreg_l29a_2p7
+
+label 本身是存在的（所以 dtc 编译不会报错，引用它们的 dts 也能过），
+但运行时 regulator_get() 会永远拿不到，消费者只能一直 EPROBE_DEFER。
+
+这是加相机节点时暴露出来的：
+
+  imx378 3-0010: failed to get regulators
+  i2c 4-0036: deferred probe pending: ov4689: Failed to get power regulators
+
+后摄的 VANA 走 vreg_l17a_2p8，前摄的 avdd 走 vreg_l29a_2p7，两个都是死的。
+
+同代的 msm8996pro-xiaomi-natrium.dts 使用 "regulators-0"，
+capricorn 直接复用
+
+改完之后 /sys/class/regulator 里能看到这六个，相机两颗传感器的
+regulator 也能拿到了。
+
+Signed-off-by: kschen <admin@kschen.eu.org>
+---
+diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
+index fce20e3..7b524d2 100644
+--- a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
++++ b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
+@@ -240,7 +240,7 @@
+ };
+ 
+ &rpm_requests {
+-	pm8994-regulators {
++	regulators-0 {
+ 		vreg_l3a_0p875: l3 {
+ 			regulator-name = "vreg_l3a_0p875";
+ 			regulator-min-microvolt = <850000>;
+-- 
+2.34.1
+

@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: CC0-1.0
+#
+# libcamera SoftISP tuning - Sony IMX378 (Xiaomi Mi 5s 后摄)
+# 装到 /usr/share/libcamera/ipa/simple/imx378.yaml
+#
+# blackLevel 用的是 16 位刻度。IMX378 的黑电平基准在 10 位下是 64，
+# 换算成 16 位 = 64 << 6 = 4096。不给这个值的话 BLC 要自己估，
+# 暗场景下容易把基准估低，连带 AWB 和 AGC 一起偏。
+%YAML 1.1
+---
+version: 1
+algorithms:
+  - BlackLevel:
+      blackLevel: 4096
+  - Awb:
+  - Lut:
+  - Agc:

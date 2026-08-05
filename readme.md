@@ -19,7 +19,7 @@
 
 ## 目录
 
-- [一、待提交清单](#一待提交清单)
+- [一、当前进度](#当前进度)
 - [二、快速上手（刷机用户）](#二快速上手刷机用户)
 - [三、构建流程](#三构建流程)
 - [四、补丁说明](#四补丁说明)
@@ -30,9 +30,21 @@
 
 ---
 
-## 一、待提交清单
+## 一、当前进度
 
-暂无
+修复摄像功能，当前已经完成了基本摄像头的使用和调用，详情见[摄像头说明](/patch/CAMERA-README.md)
+
+效果[](img/photo-rear-imx378.png)
+
+未完成内容：
+- **完整 tuning file** —— 现在只有 blackLevel，还缺 CCM 和镜头阴影校正
+- **镜头阴影 / AWB 标定** —— 后摄 i2c `3-0050` 上那颗 EEPROM 里存着出厂标定
+  数据，厂商 HAL 里 `libmmcamera_ov4688_eeprom.so` 有解析逻辑
+- **调优参数** —— vendor.img 里有 95 个 `libchromatix_imx378_*.so`，
+  是做 libcamera tuning file 的原始素材
+- **PDAF 相位对焦** —— 后摄支持（`libSonyIMX378PdafLibrary.so`），
+  mainline 基本没有这块支持
+- **12 位模式** —— 传感器和 camss 都支持，没验过
 
 ## 二、快速上手（刷机用户）
 

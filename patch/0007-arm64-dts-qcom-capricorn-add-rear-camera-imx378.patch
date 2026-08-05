@@ -1,55 +1,51 @@
 From: kschen <admin@kschen.eu.org>
-Date: Tue, 5 Aug 2026 01:05:00 +0800
-Subject: [PATCH 7/7] arm64: dts: qcom: msm8996pro-xiaomi-capricorn: add rear
- camera IMX378
+Date: Tue, 5 Aug 2026 22:45:00 +0800
+Subject: [PATCH 7/8] arm64: dts: qcom: msm8996pro-xiaomi-capricorn: add rear
+ camera IMX378 and its VCM
 
-*** 目前是空转的：mainline 还没有能驱动它的 imx378 驱动 ***
+后摄是 Sony IMX378，挂在 CCI master 0 / CSIPHY0 上，对焦马达是 AKM AK7371。
 
-后摄是 Sony IMX378，挂在 CCI master 0 / CSIPHY0 上。
+已在硬件上验证：两者都能 probe，pipeline 能出帧，focus_absolute 扫 0..4095
+时实测图像锐度随之单调变化。
 
-接线来自下游 boot.img 的 DTB (qcom,camera@0)：
+接线来自下游 boot.img 的 DTB (qcom,camera@0) 加上实机验证：
   MCLK0    = TLMM gpio 13 @ 24 MHz
-  RESET0   = TLMM gpio 86
-  STANDBY0 = TLMM gpio 30
+  reset    = TLMM gpio 30
   cam_vana = ldoa17 -> vreg_l17a_2p8  (2.8 V) -> VANA
-  cam_vdig = smpa3  -> vreg_s3a_1p3   (1.3 V) -> VDIG
+  cam_vdig = vdd_cam_1p1              (1.1 V) -> VDIG
   cam_vio  = vsa1   -> vreg_lvs1a_1p8 (1.8 V) -> VDDL
+  cam_vaf  = ldoa23 -> vreg_l23a_2p8  (2.8 V) -> VCM vdd
 
-i2c 地址、lane 数、链路速率来自反汇编厂商 HAL blob
-libmmcamera_imx378.so 里的 sensor_slave_info 和寄存器初始化表：
-  slave_addr       0x20 (8-bit)      -> 7-bit 0x10
-  reg 0x0114       0x03              -> 4 data lanes (全部 6 个模式一致)
-  reg 0x0113       0x0a              -> RAW10
-  reg 0x0820-0823  4800 Mbps 总带宽  -> 1200 Mbps/lane -> link_freq 600 MHz
+**注意 gpio 86 不是传感器复位脚**，尽管下游设备树把它标成 CAM_RESET0。
+它是 msm8996-xiaomi-common.dtsi 里 vdd_cam_1p1 那个 regulator-fixed 的
+使能脚（1.3V 进 1.1V 出的负载开关）。照下游标签把它写成 reset-gpios 的
+结果是 pinctrl 抢不到该引脚：
 
-供电名用大写 VANA/VDIG/VDDL，是为了对上 Raspberry Pi imx477 驱动里的
-imx477_supply_name[]。
+  imx378 3-0010: Error applying setting, reverse things back
+  i2c-qcom-cci a0c000.cci: master 0 queue 1 timeout
 
-关于驱动：RPi 的 drivers/media/i2c/imx477.c 已经在 of_match 里认
-"sony,imx378"（IMX378_CHIP_ID 0x0378，靠 compatible_data.extra_regs 补
-几条寄存器）。把厂商 blob 的全分辨率模式表和 RPi 的 mode_4056x3040_regs
-做交集比对，42 个共有寄存器里 37 个值完全相同，只有 PLL_VT_MPY
-(0x0306/07: 350 vs 200) 和两条 Sony 内部时序 (0x3c02, 0x3f56/57) 不同。
-两颗传感器的像素阵列都是 4056x3040。
+真正的复位是 gpio 30，也就是下游标成 CAM_STANDBY0 的那个，
+和 msm8996pro-xiaomi-scorpio.dts 里 imx318 的写法一致。
 
-但该驱动把 MIPI lane 数写死成 2：
+i2c 地址、lane 数、链路速率来自反汇编厂商 HAL blob libmmcamera_imx378.so
+的 sensor_slave_info 与寄存器初始化表：
+  slave_addr       0x20 (8-bit)     -> 7-bit 0x10
+  reg 0x0114       0x03             -> 4 data lanes (6 个模式全一致)
+  reg 0x0113       0x0a             -> RAW10
+  reg 0x0820-0823  4800 Mbps 总带宽 -> 1200 Mbps/lane -> link 600 MHz
 
-	if (ep_cfg.bus.mipi_csi2.num_data_lanes != 2) {
-		dev_err(dev, "only 2 data lanes are currently supported\n");
+上电后在 CCI 总线上实扫，0x10 返回 chip id 0x0378，0x50 是标定 EEPROM。
 
-所以移植时至少要改：放开 lane 检查、让 IMX477_IOP_SYSCK_DIV 可配
-(capricorn 高速模式要 0x01 而非 0x02)、link-frequency 换算、以及把上面
-那 5 条寄存器差异塞进 extra_regs。
+对焦马达型号来自厂商 blob libactuator_ak7371_a7_{liteon,semco}.so。
+AK7371 和 in-tree ak7375 驱动支持的 AK7375 寄存器兼容（12 位位置值放在
+0x00/0x01，standby 在 0x02），所以直接用 asahi-kasei,ak7375 即可。
 
-STANDBY0 (gpio 30) 由 pinctrl 直接拉低，驱动侧不管它。
-
-对焦马达 (下游 qcom,actuator@0，L23 供电 2.8 V，同在 CCI master 0)
-暂未加入，型号未知，需要传感器上电后扫 i2c 确认。
+需要 CONFIG_VIDEO_IMX378=m 与 CONFIG_VIDEO_AK7375=m。
 
 Signed-off-by: kschen <admin@kschen.eu.org>
 ---
 diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
-index e75e114..fce20e3 100644
+index e75e114..ffe47ea 100644
 --- a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
 +++ b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
 @@ -127,6 +127,16 @@
@@ -69,7 +65,7 @@ index e75e114..fce20e3 100644
  		/* CSIPHY2 <- front camera */
  		port@2 {
  			reg = <2>;
-@@ -143,6 +153,53 @@
+@@ -143,6 +153,70 @@
  	status = "okay";
  };
  
@@ -78,17 +74,32 @@ index e75e114..fce20e3 100644
 +	clock-frequency = <400000>;
 +
 +	/*
++	 * Rear camera VCM.  The vendor blob is libactuator_ak7371_*.so, and
++	 * the AK7371 is register compatible with the AK7375 the in-tree
++	 * driver already handles (12-bit position at 0x00/0x01, standby at
++	 * 0x02).  Verified on the hardware: focus_absolute sweeps 0..4095
++	 * and the measured image sharpness follows the position.
++	 */
++	ak7375: camera-lens@c {
++		compatible = "asahi-kasei,ak7375";
++		reg = <0x0c>;
++
++		vdd-supply = <&vreg_l23a_2p8>;		/* downstream cam_vaf 2.8 V */
++		vio-supply = <&vreg_lvs1a_1p8>;
++	};
++
++	/*
 +	 * Rear camera - Sony IMX378.
-+	 * i2c address, lane count and link frequency all confirmed by
-+	 * disassembling the vendor HAL blob libmmcamera_imx378.so:
-+	 *   slave_addr        0x20 (8-bit) -> 0x10
-+	 *   reg 0x0114        0x03         -> 4 data lanes
-+	 *   reg 0x0113        0x0a         -> RAW10
-+	 *   reg 0x0820..0823  4800 Mbps total -> 1200 Mbps/lane -> 600 MHz
++	 * i2c address, lane count and link rate confirmed by disassembling
++	 * the vendor HAL blob libmmcamera_imx378.so:
++	 *   slave_addr       0x20 (8-bit) -> 0x10
++	 *   reg 0x0114       0x03 -> 4 data lanes
++	 *   reg 0x0113       0x0a -> RAW10
++	 *   reg 0x0820-0823  4800 Mbps total -> 600 MHz link frequency
 +	 *
-+	 * NOTE: mainline has no imx378 driver yet.  The Raspberry Pi imx477
-+	 * driver already matches "sony,imx378", but hardcodes 2 data lanes,
-+	 * so it needs porting before this node does anything.
++	 * Note gpio 86 is NOT the sensor reset despite what the downstream
++	 * device tree labels it - it is the enable for the vdd_cam_1p1 load
++	 * switch.  The reset is gpio 30, which downstream calls CAM_STANDBY0.
 +	 */
 +	imx378: camera-sensor@10 {
 +		compatible = "sony,imx378";
@@ -99,10 +110,12 @@ index e75e114..fce20e3 100644
 +		assigned-clock-rates = <24000000>;
 +
 +		VANA-supply = <&vreg_l17a_2p8>;		/* 2.8 V analog */
-+		VDIG-supply = <&vreg_s3a_1p3>;		/* 1.3 V digital core */
++		VDIG-supply = <&vdd_cam_1p1>;		/* 1.1 V digital core */
 +		VDDL-supply = <&vreg_lvs1a_1p8>;	/* 1.8 V interface */
 +
-+		reset-gpios = <&tlmm 86 GPIO_ACTIVE_LOW>;
++		reset-gpios = <&tlmm 30 GPIO_ACTIVE_HIGH>;
++
++		lens-focus = <&ak7375>;
 +
 +		pinctrl-names = "default";
 +		pinctrl-0 = <&cam0_default>;
@@ -123,7 +136,7 @@ index e75e114..fce20e3 100644
  &cci_i2c1 {
  	clock-frequency = <1000000>;
  
-@@ -428,6 +485,31 @@
+@@ -428,6 +502,22 @@
  		"RFFE1_DATA",		/* GPIO_148 */
  		"RFFE1_CLK";		/* GPIO_149 */
  
@@ -136,19 +149,10 @@ index e75e114..fce20e3 100644
 +		};
 +
 +		rst-pins {
-+			pins = "gpio86";
-+			function = "gpio";
-+			drive-strength = <2>;
-+			bias-disable;
-+		};
-+
-+		/* CAM_STANDBY0 - held deasserted, the driver does not touch it */
-+		standby-pins {
 +			pins = "gpio30";
 +			function = "gpio";
 +			drive-strength = <2>;
 +			bias-disable;
-+			output-low;
 +		};
 +	};
 +

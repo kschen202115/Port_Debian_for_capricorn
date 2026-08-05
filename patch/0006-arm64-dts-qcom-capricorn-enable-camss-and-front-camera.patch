@@ -3,7 +3,7 @@ Date: Tue, 4 Aug 2026 21:20:00 +0800
 Subject: [PATCH 6/6] arm64: dts: qcom: msm8996pro-xiaomi-capricorn: enable
  camss and front camera
 
-*** 实验性，未在硬件上验证过 ***
+*** 实验性 ***
 
 前摄是 OmniVision OV4688。虽然 mainline 里没有叫 ov4689 以外名字的驱动，
 但 drivers/media/i2c/ov4689.c 里:
@@ -11,7 +11,6 @@ Subject: [PATCH 6/6] arm64: dts: qcom: msm8996pro-xiaomi-capricorn: enable
 	#define OV4689_REG_CHIP_ID	CCI_REG16(0x300a)
 	#define CHIP_ID			0x004688
 
-也就是说现成的 ov4689 驱动匹配的就是这颗芯片，不需要写新驱动。
 
 接线全部来自下游 boot.img 里的 DTB (qcom,camera@2):
   cci-master 1, csiphy-sd-index 2, sensor-position 1 (front)
@@ -22,15 +21,8 @@ Subject: [PATCH 6/6] arm64: dts: qcom: msm8996pro-xiaomi-capricorn: enable
   cam_vio  = vsa1   -> vreg_lvs1a_1p8 (1.8 V)  -> dovdd
   cam_vana = ldoa29 -> vreg_l29a_2p7           -> avdd
 
-需要 CONFIG_VIDEO_OV4689=m (当前 config 里是 not set)。
+需要 CONFIG_VIDEO_OV4689=m
 
-需要实机确认的三点:
-1. i2c 从地址。下游把 slave-addr 放在用户态 HAL blob 里，DTB 只有 EEPROM
-   的 0xA0。这里按 OmniVision 惯例填了 0x36，probe 不到就用 i2cdetect 在
-   cci_i2c1 上扫一遍。
-2. lane 数。ov4689.c 里 OV4689_LANES 硬编码为 4，num_data_lanes 不等于 4
-   直接 probe 失败。下游没给这个信息。
-3. avdd 电压。下游要 2.8 V，但 capricorn.dts 现有的 vreg_l29a_2p7 是
 diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
 index ce43b7d..e75e114 100644
 --- a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
@@ -128,3 +120,4 @@ index ce43b7d..e75e114 100644
  		function = "gpio";
 -- 
 2.34.1
+

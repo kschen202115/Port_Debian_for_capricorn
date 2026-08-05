@@ -2,7 +2,7 @@ From: kschen <admin@kschen.eu.org>
 Date: Tue, 5 Aug 2026 01:35:00 +0800
 Subject: [PATCH 8/8] media: i2c: add Sony IMX378 sensor driver
 
-*** 未在硬件上验证过，属于 bring-up 阶段代码 ***
+***试验性 ***
 
 用于 Xiaomi Mi 5s (capricorn) 的后摄。
 
@@ -10,10 +10,6 @@ Subject: [PATCH 8/8] media: i2c: add Sony IMX378 sensor driver
 本来就把 IMX378 当作变体支持（of_match 有 "sony,imx378"，chip id 0x0378，
 通过 compatible_data.extra_regs 打三条补充寄存器），这里把它裁剪成只认
 IMX378，并加上 4 lane 支持。
-
-之所以敢直接复用它的寄存器表：把厂商 HAL blob (libmmcamera_imx378.so)
-的全分辨率模式表和该驱动的 mode_4056x3040_regs 做交集，42 个共有寄存器
-里 37 个值完全相同，两颗传感器的像素阵列同为 4056x3040。
 
 相对 RPi 版本的改动：
 
@@ -30,7 +26,7 @@ IMX378，并加上 4 lane 支持。
 4. imx378_check_link_freq() 多接一个 sysck_div 参数。
 
 5. REQ_LINK_BIT_RATE (0x0820) 原本写死 "* 2 for DDR * 2 for num lanes"，
-   改用真实 lane 数。这一处能和厂商 blob 对上：600 MHz * 2 * 4 = 4800 Mbps，
+   改用真实 lane 数。和厂商 blob 对上：600 MHz * 2 * 4 = 4800 Mbps，
    正是 blob 写入的值。
 
 6. PIXEL_RATE 从固定 840 MHz 变成每实例值。
@@ -64,64 +60,53 @@ IMX378，并加上 4 lane 支持。
     默认 0 保持驱动自己的行为（600 MHz 对应 mpy = 100）；
     350 / 1 是厂商固件用的那一组。
 
-link-frequency 用 600000000（见 0007 的 DT 节点）。三条独立证据：
-blob 的 REQ_LINK_BIT_RATE = 4800 Mbps ÷ 4 lane ÷ 2 (DDR)；VT PLL 反算的
-30 fps 与行/帧长度自洽；驱动自身的 REQ_LINK_BIT_RATE 计算式在 4 lane
-下正好复现 4800。
+    默认可以驱动仅仅作为保留
 
-编译状态：在 6.19.5 上以 out-of-tree 模块编过，把 devm_cci_regmap_init_i2c
-临时声明一下之后零 error 零 warning，EXIT=0。Kconfig 里已经
-select V4L2_CCI_I2C，所以正常构建不需要那个临时声明。
+
+
 需要 CONFIG_VIDEO_IMX378=m。
 
-尚未验证：传感器能否真的在 600 MHz 链路上出图。probe 读 chip id 应该
-没问题；如果 probe 过了但 stream 起不来，用上面那两个模块参数在设备上
-直接试，厂商那组是 mpy=350 / sysck=1。
+
 
 Signed-off-by: kschen <admin@kschen.eu.org>
 Cc: Naushir Patuck <naush@raspberrypi.com>
 ---
-diff --git a/drivers/media/i2c/Kconfig b/drivers/media/i2c/Kconfig
-index 861e8c4..1bf7375 100644
---- a/drivers/media/i2c/Kconfig
-+++ b/drivers/media/i2c/Kconfig
-@@ -280,6 +280,18 @@ config VIDEO_IMX355
- 	  To compile this driver as a module, choose M here: the
- 	  module will be called imx355.
- 
-+config VIDEO_IMX378
-+	tristate "Sony IMX378 sensor support"
-+	depends on GPIOLIB
-+	select V4L2_CCI_I2C
-+	help
-+	  This is a Video4Linux2 sensor driver for the Sony IMX378 camera.
-+	  It is derived from the Raspberry Pi imx477 driver and additionally
-+	  supports 4-lane CSI-2 configurations.
-+
-+	  To compile this driver as a module, choose M here: the
-+	  module will be called imx378.
-+
- config VIDEO_IMX412
- 	tristate "Sony IMX412 sensor support"
- 	depends on OF_GPIO
-diff --git a/drivers/media/i2c/Makefile b/drivers/media/i2c/Makefile
-index 7e76b7c..0fde5e3 100644
---- a/drivers/media/i2c/Makefile
-+++ b/drivers/media/i2c/Makefile
-@@ -60,6 +60,7 @@ obj-$(CONFIG_VIDEO_IMX319) += imx319.o
- obj-$(CONFIG_VIDEO_IMX334) += imx334.o
- obj-$(CONFIG_VIDEO_IMX335) += imx335.o
- obj-$(CONFIG_VIDEO_IMX355) += imx355.o
-+obj-$(CONFIG_VIDEO_IMX378) += imx378.o
- obj-$(CONFIG_VIDEO_IMX412) += imx412.o
- obj-$(CONFIG_VIDEO_IMX415) += imx415.o
- obj-$(CONFIG_VIDEO_IR_I2C) += ir-kbd-i2c.o
+
+11. 【实机验证后补】imx378_4lane_regs[] 必须包含 CSI_LANE_MODE：
+
+      {CCI_REG8(0x0114), 0x03},   /* 2 lanes -> 4 lanes */
+
+    mode_common_regs[] 里写死了 0x0114 = 0x01（2 lane）。不覆盖它的话
+    传感器按 2 lane 发数据、camss 按 4 lane 收，表现是 camss 报
+    "VFE sof timeout"，一帧都收不到。加上这条之后立刻出帧。
+
+12. 【实机验证后补】修 probe 早期失败时 runtime PM 的不平衡。
+    identify_module() 失败会 goto error_power_off，而那里调了
+    pm_runtime_disable() —— 但此时 pm_runtime_enable() 还没执行到。
+    结果 disable_depth 被顶到 2，之后每次 unbind/rebind 都是
+    disable+enable 净零，永远回不到 0。表现是：
+
+      /sys/bus/i2c/devices/3-0010/power/runtime_status = unsupported
+      VIDIOC_STREAMON returned -1 (Permission denied)   /* -EACCES */
+
+    因为 imx378_set_stream() 里的 pm_runtime_resume_and_get() 在
+    runtime PM 被禁用时返回 -EACCES。新增 error_power_off_only 标签，
+    早期失败只关电不动 PM。
+
+13. 【实机验证后补】chip id 读取加重试（IMX378_CHIP_ID_RETRIES = 10，
+    每次间隔 5ms）。冷启动时 1.1V 那条链（GPIO 负载开关）加上传感器
+    内部 POR 有时慢于 imx378_power_on() 里的 8ms XCLR 延时，首读拿不到
+    ACK，开机 probe 直接失败。
+
+实机验证：两颗传感器开机即 probe 成功，pipeline 出帧，
+2028x1520 RAW10 每帧 stride 2536、共 3,854,720 字节，和 v4l2 报的一致。
+
 diff --git a/drivers/media/i2c/imx378.c b/drivers/media/i2c/imx378.c
 new file mode 100644
-index 0000000..df9f52c
+index 0000000..2c30b2f
 --- /dev/null
 +++ b/drivers/media/i2c/imx378.c
-@@ -0,0 +1,2372 @@
+@@ -0,0 +1,2390 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * A V4L2 driver for Sony IMX378 cameras.
@@ -1039,6 +1024,7 @@ index 0000000..df9f52c
 + * and mode_4056x3040_regs have in common, only these three differ.
 + */
 +static const struct cci_reg_sequence imx378_4lane_regs[] = {
++	{CCI_REG8(0x0114), 0x03},	/* CSI_LANE_MODE: 2 lanes -> 4 lanes */
 +	{CCI_REG16(0x0306), 200},	/* PLL_VT_MPY: 350 -> 200 */
 +	{CCI_REG8(0x3c02), 0xdc},
 +	{CCI_REG16(0x3f56), 0x00e2},
@@ -1197,6 +1183,7 @@ index 0000000..df9f52c
 + * in the datasheet) is much smaller - 600us.
 + */
 +#define IMX378_XCLR_MIN_DELAY_US	8000
++#define IMX378_CHIP_ID_RETRIES		10
 +#define IMX378_XCLR_DELAY_RANGE_US	1000
 +
 +struct imx378_compatible_data {
@@ -2044,15 +2031,29 @@ index 0000000..df9f52c
 +static int imx378_identify_module(struct imx378 *imx378, u32 expected_id)
 +{
 +	struct i2c_client *client = v4l2_get_subdevdata(&imx378->sd);
-+	int ret;
++	int ret = 0;
++	unsigned int i;
 +	u64 val;
 +
-+	ret = cci_read(imx378->regmap, IMX378_REG_CHIP_ID, &val, NULL);
++	/*
++	 * On a cold boot the 1.1V rail (a GPIO controlled load switch) and the
++	 * sensor's internal power-on reset can take longer to settle than the
++	 * XCLR delay in imx378_power_on(), and the first read gets no ACK.
++	 * Retry a few times rather than failing the probe outright.
++	 */
++	for (i = 0; i < IMX378_CHIP_ID_RETRIES; i++) {
++		ret = cci_read(imx378->regmap, IMX378_REG_CHIP_ID, &val, NULL);
++		if (!ret)
++			break;
++		usleep_range(5000, 6000);
++	}
 +	if (ret) {
 +		dev_err(&client->dev, "failed to read chip id %x, with error %d\n",
 +			expected_id, ret);
 +		return ret;
 +	}
++	if (i)
++		dev_info(&client->dev, "chip id read succeeded after %d retries\n", i);
 +
 +	if (val != expected_id) {
 +		dev_err(&client->dev, "chip id mismatch: %x!=%llx\n",
@@ -2395,7 +2396,7 @@ index 0000000..df9f52c
 +
 +	ret = imx378_identify_module(imx378, imx378->compatible_data->chip_id);
 +	if (ret)
-+		goto error_power_off;
++		goto error_power_off_only;
 +
 +	/* Initialize default format */
 +	imx378_set_default_format(imx378);
@@ -2452,6 +2453,8 @@ index 0000000..df9f52c
 +error_power_off:
 +	pm_runtime_disable(&client->dev);
 +	pm_runtime_put_noidle(&client->dev);
++
++error_power_off_only:
 +	imx378_power_off(&client->dev);
 +
 +	return ret;
