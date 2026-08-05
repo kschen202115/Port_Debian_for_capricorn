@@ -142,7 +142,9 @@ jobs:
           #跳过依赖检验，对于6.12内核源码
 
           clang-19 --print-supported-cpus --target=aarch64-linux-gnu | grep -i kryo
+          echo 'int test(int a){return a+1;}' > test.c
           clang-19 -### -target aarch64-linux-gnu -mcpu=kryo -c test.c
+          rm -f test.c
 
           if [ "${{ inputs.use_clang }}" == "true" ]; then
             make ${{ inputs.device_code }}_defconfig ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- CC=clang-19 LD=ld.lld-19 AR=llvm-ar AS=llvm-as NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf STRIP=llvm-strip LLVM=1 LLVM_IAS=1
