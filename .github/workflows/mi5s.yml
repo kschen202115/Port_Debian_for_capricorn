@@ -141,7 +141,6 @@ jobs:
           export KDEB_OPTIONS="-d"
           #跳过依赖检验，对于6.12内核源码
 
-          clang-19 --print-supported-cpus --target=aarch64-linux-gnu | grep -i kryo
           echo 'int test(int a){return a+1;}' > test.c
           clang-19 -### -target aarch64-linux-gnu -mcpu=kryo -c test.c
           rm -f test.c
