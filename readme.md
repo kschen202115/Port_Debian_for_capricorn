@@ -4,7 +4,7 @@
 
 仓库同时提供构建流水线（GitHub Actions）、设备树与面板补丁、以及一套跑在设备上的控制台工具。
 
-| 项目 | 当前基线 |
+| 项目 | 当前基线和部分可用外设 |
 |---|---|
 | 设备 | Xiaomi Mi 5s，代号 `capricorn` |
 | SoC | Qualcomm MSM8996 Pro（Kryo，**ARMv8.0-A**，4 核 2+2） |
@@ -14,6 +14,9 @@
 | 发行版 | Debian 13 (trixie)，systemd 257 |
 | 存储 | UFS，rootfs 为 ext4 |
 | 显示栈 | DRM/MSM MDP5 + fbcon（无图形桌面） |
+| 摄像 | 前摄 OmniVision OV4688 后摄 Sony IMX378 |
+| 声卡 | 可用 |
+| usb | type-c 可用 otg可用 充电支持30W充电 |
 
 ---
 
