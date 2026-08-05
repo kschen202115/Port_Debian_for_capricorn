@@ -215,6 +215,17 @@ interrupts = <125 IRQ_TYPE_EDGE_FALLING>;
 
 新增 `drivers/gpu/drm/panel/panel-lgd-td4722.c`（213 行）及对应的 Kconfig / Makefile 条目，以及独立的 `msm8996pro-xiaomi-capricorn-td4722.dts`。
 
+### `patch/0003`
+
+声卡补丁
+
+### `patch/0004`
+
+音频编解码补丁
+
+### `patch/0005-9`
+
+前后摄像头相关补丁
 
 ### CJKTTY
 
