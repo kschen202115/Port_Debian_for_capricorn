@@ -1,0 +1,59 @@
+From: kschen <admin@kschen.eu.org>
+Date: Fri, 7 Aug 2026 00:50:00 +0800
+Subject: [PATCH 1/2] ASoC: tfa989x: add support for TFA9891
+
+The Xiaomi Mi 5s (msm8996pro-xiaomi-capricorn) carries an amplifier that
+the downstream device tree calls "tfa,tfa9890", but which reports
+revision 0x92 rather than the 0x80 the TFA9890 entry expects:
+
+  tfa989x 1-0034: invalid revision number, expected 0x80, got 0x92
+
+The downstream tfa98xx driver does not trust the compatible either - it
+distinguishes the various TFA1 parts by reading the revision register at
+runtime, and its firmware container list includes tfa9891 alongside
+tfa9890.  Revision 0x92 is TFA9891.
+
+TFA9891 is register compatible with TFA9890 for everything this driver
+touches.  Verified on capricorn by forcing the TFA9890 entry to accept
+0x92: the I2C reset, the tfa9890 init sequence (unhide key, PLL bits at
+0x59, re-hide, CURRENTSENSE2) and the DSP bypass sequence all complete
+without error, and the amplifier registers as an ASoC component.
+
+Add a dedicated compatible reusing tfa9890_init.
+
+Signed-off-by: kschen <admin@kschen.eu.org>
+---
+ sound/soc/codecs/tfa989x.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/sound/soc/codecs/tfa989x.c b/sound/soc/codecs/tfa989x.c
+--- a/sound/soc/codecs/tfa989x.c
++++ b/sound/soc/codecs/tfa989x.c
+@@ -50,6 +50,7 @@
+ 
+ #define TFA9890_REVISION		0x80
++#define TFA9891_REVISION		0x92
+ #define TFA9895_REVISION		0x12
+ #define TFA9897_REVISION		0x97
+ 
+@@ -223,6 +224,12 @@ static const struct tfa989x_rev tfa9890_rev = {
+ 	.init	= tfa9890_init,
+ };
+ 
++/* TFA9891 is register compatible with TFA9890 for the parts used here */
++static const struct tfa989x_rev tfa9891_rev = {
++	.rev	= TFA9891_REVISION,
++	.init	= tfa9890_init,
++};
++
+ static const struct reg_sequence tfa9895_reg_init[] = {
+ 	/* some other registers must be set for optimal amplifier behaviour */
+ 	{ TFA989X_BAT_PROT, 0x13ab },
+@@ -404,6 +411,7 @@ static int tfa989x_i2c_probe(struct i2c_client *i2c)
+ 
+ static const struct of_device_id tfa989x_of_match[] = {
+ 	{ .compatible = "nxp,tfa9890", .data = &tfa9890_rev },
++	{ .compatible = "nxp,tfa9891", .data = &tfa9891_rev },
+ 	{ .compatible = "nxp,tfa9895", .data = &tfa9895_rev },
+ 	{ .compatible = "nxp,tfa9897", .data = &tfa9897_rev },
+ 	{ }

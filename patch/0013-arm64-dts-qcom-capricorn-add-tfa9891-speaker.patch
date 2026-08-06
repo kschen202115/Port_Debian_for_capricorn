@@ -1,0 +1,119 @@
+From: kschen <admin@kschen.eu.org>
+Date: Fri, 7 Aug 2026 00:55:00 +0800
+Subject: [PATCH] arm64: dts: qcom: msm8996pro-xiaomi-capricorn: add TFA9891
+ loudspeaker on Quaternary MI2S
+
+capricorn drives its loudspeaker with an NXP TFA9891 smart amplifier on
+blsp2_i2c3 at address 0x34 - the bus that already carries the TUSB320L
+type-C controller - fed from Quaternary MI2S.
+
+The downstream device tree describes the I2C side (calling the part
+tfa9890, though it reports revision 0x92 = TFA9891):
+
+  /soc/i2c@75b7000/tfa98xx@34 { compatible = "tfa,tfa9890"; reg = <0x34>; };
+
+and sound/soc/msm/msm8996.c wires it to Quaternary MI2S:
+
+  static struct snd_soc_dai_link msm8996_quat_mi2s_tfa98xx_dai_links[] = {
+          {
+                  .name = LPASS_BE_QUAT_MI2S_RX,
+                  .cpu_dai_name = "msm-dai-q6-mi2s.3",
+                  .codec_name = "tfa98xx.9-0034",
+                  .codec_dai_name = "tfa98xx-aif-9-34",
+                  .dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_CBS_CFS,
+
+msm-dai-q6-mi2s.3 is the quaternary instance and CBS_CFS means the SoC
+drives both clocks.  The pin assignment is confirmed by the gpio line
+names in the downstream device tree: gpio58 "SPKR_I2S_BCK", gpio59
+"SPKR_I2S_WS", gpio60 "SPKR_I2S_DOUT".  Two channels at 48 kHz fit on
+one serial data line, so SD1 is left unclaimed.
+
+Depends on the tfa989x TFA9891 support and the apq8096 MI2S clock setup.
+
+Note the speaker-dai-link must come after the existing links.  The dai
+link order determines the ASoC component probe order; putting a backend
+before the MultiMedia frontends makes q6routing probe before q6afe-dai,
+and every route referencing a q6afe backend widget then fails.
+
+Signed-off-by: kschen <admin@kschen.eu.org>
+---
+ arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts | 55 ++++++++++++
+ 1 file changed, 55 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
+--- a/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
++++ b/arch/arm64/boot/dts/qcom/msm8996pro-xiaomi-capricorn.dts
+@@ -1,5 +1,6 @@
+ // SPDX-License-Identifier: BSD-3-Clause
+ 
++#include <dt-bindings/sound/qcom,q6afe.h>
+ #include "msm8996pro.dtsi"
+ #include "msm8996-xiaomi-common.dtsi"
+ 
+@@ -107,8 +108,62 @@
+         firmware-name = "qcom/msm8996/capricorn/slpi.mbn";
+ };
+ 
++&blsp2_i2c3 {
++	/*
++	 * NXP TFA9891 smart amplifier driving the loudspeaker.  Shares this
++	 * bus with the TUSB320L type-C controller at 0x47.  The bootloader
++	 * leaves it out of reset and the driver resets it over I2C, so no
++	 * reset-gpios is needed.
++	 */
++	speaker_amp: audio-codec@34 {
++		compatible = "nxp,tfa9891";
++		reg = <0x34>;
++
++		#sound-dai-cells = <0>;
++		sound-name-prefix = "Speaker";
++	};
++};
++
++&q6afedai {
++	dai@22 {
++		reg = <QUATERNARY_MI2S_RX>;
++		qcom,sd-lines = <0>;
++	};
++};
++
+ &sound {
+ 	model = "capricorn";
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&quat_mi2s_active>;
++
++	/*
++	 * Appended after the links inherited from the SoC dtsi on purpose -
++	 * see the commit message about component probe order.
++	 */
++	speaker-dai-link {
++		link-name = "Speaker";
++
++		cpu {
++			sound-dai = <&q6afedai QUATERNARY_MI2S_RX>;
++		};
++
++		platform {
++			sound-dai = <&q6routing>;
++		};
++
++		codec {
++			sound-dai = <&speaker_amp>;
++		};
++	};
++};
++
++&tlmm {
++	quat_mi2s_active: quat-mi2s-active-state {
++		/* gpio58 SPKR_I2S_BCK, gpio59 SPKR_I2S_WS, gpio60 SPKR_I2S_DOUT */
++		pins = "gpio58", "gpio59", "gpio60";
++		function = "qua_mi2s";
++		drive-strength = <8>;
++		bias-disable;
++	};
+ };
+ 
+ &venus {
+         firmware-name = "qcom/msm8996/capricorn/venus.mbn";
+ };

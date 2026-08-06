@@ -1,0 +1,137 @@
+From: kschen <admin@kschen.eu.org>
+Date: Fri, 7 Aug 2026 01:00:00 +0800
+Subject: [PATCH 2/2] ASoC: qcom: apq8096: add MI2S clock and format setup
+
+apq8096.c only ever dealt with SLIMBUS backends: apq8096_init() programs
+the WCD9335 SLIMBUS channel maps and msm_snd_hw_params() copies that map
+to the CPU DAI.  Nothing configures the LPASS bit clock or tells the SoC
+it is the clock provider, because no apq8096 board used an MI2S backend
+so far.
+
+msm8996pro-xiaomi-capricorn does: its loudspeaker is an NXP TFA9891 fed
+from Quaternary MI2S.  With that backend in the device tree the card
+registers and the stream reaches RUNNING, but the first write fails:
+
+  aplay: pcm_write:2178: write error: Input/output error
+
+with nothing in the kernel log - the AFE port never got a bit clock, so
+the amplifier saw no I2S and the DSP consumed nothing.
+
+Add a startup/shutdown pair that configures the port the way the other
+Qualcomm machine drivers do.  1.536 MHz is 48 kHz x 16 bit x 2 channels,
+matching apq8096_be_hw_params_fixup() and the rate the downstream driver
+programs for this port.  SLIMBUS backends take the default branch and
+are unaffected.
+
+Note the clock IDs must come from qdsp6/q6afe.h
+(Q6AFE_LPASS_CLK_ID_QUAD_MI2S_IBIT = 0x106), not the similarly named
+LPASS_CLK_ID_QUAD_MI2S_IBIT = 7 in dt-bindings/sound/qcom,q6afe.h.
+q6afe_mi2s_set_sysclk() matches clk_id against the 0x100..0x116 range
+and silently returns 0 for anything else, so passing the dt-bindings
+value looks like success while doing nothing at all.
+
+Verified on capricorn: with the correct ID the amplifier's status
+register goes from 0x0b9d to 0xd8df, i.e. PLLS and CLKS both assert, and
+playback runs to completion.
+
+Signed-off-by: kschen <admin@kschen.eu.org>
+---
+ sound/soc/qcom/apq8096.c | 61 ++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 61 insertions(+)
+
+diff --git a/sound/soc/qcom/apq8096.c b/sound/soc/qcom/apq8096.c
+--- a/sound/soc/qcom/apq8096.c
++++ b/sound/soc/qcom/apq8096.c
+@@ -1,16 +1,21 @@
+ // SPDX-License-Identifier: GPL-2.0
+ // Copyright (c) 2018, Linaro Limited
+ 
++#include <dt-bindings/sound/qcom,q6afe.h>
+ #include <linux/module.h>
+ #include <linux/platform_device.h>
+ #include <sound/soc.h>
+ #include <sound/soc-dapm.h>
+ #include <sound/pcm.h>
+ #include "common.h"
++#include "qdsp6/q6afe.h"
+ 
+ #define SLIM_MAX_TX_PORTS 16
+ #define SLIM_MAX_RX_PORTS 16
+ #define WCD9335_DEFAULT_MCLK_RATE	9600000
+ 
++/* 48 kHz x 16 bit x 2 channels */
++#define MI2S_BCLK_RATE			1536000
++
+ static int apq8096_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
+ 				      struct snd_pcm_hw_params *params)
+ {
+@@ -60,8 +65,64 @@ end:
+ 	return ret;
+ }
+ 
++static int apq8096_snd_startup(struct snd_pcm_substream *substream)
++{
++	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
++	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
++	unsigned int fmt = SND_SOC_DAIFMT_BP_FP |
++			   SND_SOC_DAIFMT_NB_NF |
++			   SND_SOC_DAIFMT_I2S;
++	int clk_id, ret;
++
++	switch (cpu_dai->id) {
++	case PRIMARY_MI2S_RX:
++		clk_id = Q6AFE_LPASS_CLK_ID_PRI_MI2S_IBIT;
++		break;
++	case SECONDARY_MI2S_RX:
++		clk_id = Q6AFE_LPASS_CLK_ID_SEC_MI2S_IBIT;
++		break;
++	case TERTIARY_MI2S_RX:
++		clk_id = Q6AFE_LPASS_CLK_ID_TER_MI2S_IBIT;
++		break;
++	case QUATERNARY_MI2S_RX:
++		clk_id = Q6AFE_LPASS_CLK_ID_QUAD_MI2S_IBIT;
++		break;
++	default:
++		return 0;
++	}
++
++	ret = snd_soc_dai_set_sysclk(cpu_dai, clk_id, MI2S_BCLK_RATE,
++				     SNDRV_PCM_STREAM_PLAYBACK);
++	if (ret) {
++		dev_err(rtd->dev, "failed to set MI2S bit clock: %d\n", ret);
++		return ret;
++	}
++
++	ret = snd_soc_dai_set_fmt(cpu_dai, fmt);
++	if (ret) {
++		dev_err(rtd->dev, "failed to set MI2S format: %d\n", ret);
++		return ret;
++	}
++
++	return 0;
++}
++
++static void apq8096_snd_shutdown(struct snd_pcm_substream *substream)
++{
++	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
++	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
++
++	switch (cpu_dai->id) {
++	case PRIMARY_MI2S_RX:
++	case SECONDARY_MI2S_RX:
++	case TERTIARY_MI2S_RX:
++	case QUATERNARY_MI2S_RX:
++		snd_soc_dai_set_sysclk(cpu_dai, Q6AFE_LPASS_CLK_ID_QUAD_MI2S_IBIT,
++				       0, SNDRV_PCM_STREAM_PLAYBACK);
++		break;
++	default:
++		break;
++	}
++}
++
+ static const struct snd_soc_ops apq8096_ops = {
++	.startup = apq8096_snd_startup,
++	.shutdown = apq8096_snd_shutdown,
+ 	.hw_params = msm_snd_hw_params,
+ };
+ 
