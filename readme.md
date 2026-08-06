@@ -4,6 +4,8 @@
 
 仓库同时提供构建流水线（GitHub Actions）、设备树与面板补丁、以及一套跑在设备上的控制台工具。
 
+[![一键构建](https://github.com/kschen202115/Port_Debian_for_capricorn/actions/workflows/release-all.yml/badge.svg)](https://github.com/kschen202115/Port_Debian_for_capricorn/actions/workflows/release-all.yml)
+
 | 项目 | 当前基线和部分可用外设 |
 |---|---|
 | 设备 | Xiaomi Mi 5s，代号 `capricorn` |
