@@ -116,6 +116,9 @@ jobs:
           git apply 0007-arm64-dts-qcom-capricorn-add-rear-camera-imx378.patch
           git apply 0008-media-i2c-add-imx378-sensor-driver.patch
           git apply 0009-arm64-dts-qcom-capricorn-fix-rpm-regulators-node-name.patch
+          git apply 0011-ASoC-tfa989x-add-support-for-TFA9891.patch
+          git apply 0012-ASoC-qcom-apq8096-add-MI2S-clock-and-format-setup.patch
+          git apply 0013-arm64-dts-qcom-capricorn-add-tfa9891-speaker.patch
 
           # CONFIG_ARCH_QCOM normally builds every Qualcomm DTB. This image
           # targets the TD4722 Capricorn variant only.
