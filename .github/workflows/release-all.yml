@@ -6,7 +6,7 @@
 # 不会创建新 workflow run」这条规则的例外。
 #
 # 唯一的前提是 GITHUB_TOKEN 需要 actions: write（下面已声明）。
-name: 一键构建（rootfs → 内核 → boot.img）
+name: 一键构建
 
 on:
   workflow_dispatch:
