@@ -109,13 +109,13 @@ jobs:
           make mrproper
 
           # Adds the alternative TD4722 panel DTB and DRM panel driver.
-          # git apply 0002-capricorn-td4722-panel-support.patch
-          # git apply 0003-arm64-dts-qcom-capricorn-set-sound-card-model.patch
-          # git apply 0004-media-venus-hfi_cmds-pack-H264_TRANSFORM_8X8-in-1x.patch
-          # git apply 0006-arm64-dts-qcom-capricorn-enable-camss-and-front-camera.patch
-          # git apply 0007-arm64-dts-qcom-capricorn-add-rear-camera-imx378.patch
-          # git apply 0008-media-i2c-add-imx378-sensor-driver.patch
-          git apply *.patch
+          git apply 0002-capricorn-td4722-panel-support.patch
+          git apply 0003-arm64-dts-qcom-capricorn-set-sound-card-model.patch
+          git apply 0004-media-venus-hfi_cmds-pack-H264_TRANSFORM_8X8-in-1x.patch
+          git apply 0006-arm64-dts-qcom-capricorn-enable-camss-and-front-camera.patch
+          git apply 0007-arm64-dts-qcom-capricorn-add-rear-camera-imx378.patch
+          git apply 0008-media-i2c-add-imx378-sensor-driver.patch
+          git apply 0009-arm64-dts-qcom-capricorn-fix-rpm-regulators-node-name.patch
 
           # CONFIG_ARCH_QCOM normally builds every Qualcomm DTB. This image
           # targets the TD4722 Capricorn variant only.
